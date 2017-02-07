@@ -19,11 +19,12 @@ type Params struct {
 // Plugin is a proof-of-stake plugin for Basecoin
 type Plugin struct {
 	params Params
+	height uint64
 }
 
 // New creates a Plugin instance
 func New(params Params) *Plugin {
-	return &Plugin{params}
+	return &Plugin{params: params}
 }
 
 // Name returns the name of the stake plugin
@@ -114,7 +115,7 @@ func (sp *Plugin) runUnbondTx(tx UnbondTx, store types.KVStore, ctx types.CallCo
 		ValidatorPubKey: tx.ValidatorPubKey,
 		Amount:          tx.Amount,
 		Address:         ctx.CallerAddress,
-		Height:          0, // TODO
+		Height:          sp.height, // unbonds at `height + unbondingPeriod`
 	})
 
 	saveState(store, state)
@@ -139,9 +140,9 @@ func (sp *Plugin) InitChain(store types.KVStore, vals []*abci.Validator) {
 }
 
 // BeginBlock from ABCI
-func (sp *Plugin) BeginBlock(store types.KVStore, hash []byte, header *abci.Header) {
+func (sp *Plugin) BeginBlock(store types.KVStore, height uint64) {
+	sp.height = height
 	state := loadState(store)
-	height := header.Height
 
 	// If any unbonding requests have reached maturity, pay out coins into their
 	// basecoin accounts. `state.Unbonding` is a queue, so the lowest-index items
@@ -169,8 +170,9 @@ func (sp *Plugin) BeginBlock(store types.KVStore, hash []byte, header *abci.Head
 }
 
 // EndBlock from ABCI
-func (sp *Plugin) EndBlock(store types.KVStore, height uint64) (res abci.ResponseEndBlock) {
-	return abci.ResponseEndBlock{loadState(store).Collateral.Validators()}
+func (sp *Plugin) EndBlock(store types.KVStore, height uint64) abci.Validators {
+	sp.height = height + 1
+	return loadState(store).Collateral.Validators()
 }
 
 func loadState(store types.KVStore) *State {
