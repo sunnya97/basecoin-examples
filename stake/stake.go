@@ -2,6 +2,7 @@ package stake
 
 import (
 	"fmt"
+	"strconv"
 
 	abci "github.com/tendermint/abci/types"
 	bcs "github.com/tendermint/basecoin/state"
@@ -10,62 +11,60 @@ import (
 	"github.com/tendermint/go-wire"
 )
 
-// Params defines configurable parameters for the stake plugin
-type Params struct {
-	UnbondingPeriod uint64
-	TokenDenom      string
-}
+const denomATOM = "atom"
 
 // Plugin is a proof-of-stake plugin for Basecoin
 type Plugin struct {
-	params Params
-	height uint64
-}
-
-// New creates a Plugin instance
-func New(params Params) *Plugin {
-	return &Plugin{params: params}
+	unbondingPeriod uint64 // how long unbonding takes (measured in blocks)
+	height          uint64 // current block height
 }
 
 // Name returns the name of the stake plugin
-func (sp *Plugin) Name() string {
+func (sp Plugin) Name() string {
 	return "stake"
 }
 
 // SetOption from ABCI
-func (sp *Plugin) SetOption(store types.KVStore, key string, value string) (log string) {
-	panic(fmt.Sprintf("Unknown option key '%s'", key))
+func (sp Plugin) SetOption(store types.KVStore, key string, value string) (log string) {
+	if key == "unbondingPeriod" {
+		var err error
+		sp.unbondingPeriod, err = strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			panic(fmt.Errorf("Could not parse int: '%s'", value))
+		}
+	}
+	panic(fmt.Errorf("Unknown option key '%s'", key))
 }
 
 // RunTx from ABCI
-func (sp *Plugin) RunTx(store types.KVStore, ctx types.CallContext, txBytes []byte) (res abci.Result) {
+func (sp Plugin) RunTx(store types.KVStore, ctx types.CallContext, txBytes []byte) (res abci.Result) {
 	var tx Tx
 	err := wire.ReadBinaryBytes(txBytes, &tx)
 	if err != nil {
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
-	if _, isBondTx := tx.(BondTx); isBondTx {
+	_, isBondTx := tx.(BondTx)
+	if isBondTx {
 		return sp.runBondTx(tx.(BondTx), store, ctx)
+	} else {
+		return sp.runUnbondTx(tx.(UnbondTx), store, ctx)
 	}
-	return sp.runUnbondTx(tx.(UnbondTx), store, ctx)
 }
 
-func (sp *Plugin) runBondTx(tx BondTx, store types.KVStore, ctx types.CallContext) (res abci.Result) {
-	if len(ctx.Coins) != 1 {
-		log := "Must only use one denomination"
-		return abci.ErrInternalError.AppendLog(log)
-	}
-	if ctx.Coins[0].Denom != sp.params.TokenDenom {
-		log := fmt.Sprintf("Collateral must be denomination '%s'", sp.params.TokenDenom)
-		return abci.ErrInternalError.AppendLog(log)
-	}
-	amount := ctx.Coins[0].Amount
-	if amount <= 0 {
-		log := "Amount must be > 0"
-		return abci.ErrInternalError.AppendLog(log)
+func (sp Plugin) runBondTx(tx BondTx, store types.KVStore, ctx types.CallContext) (res abci.Result) {
+	// make sure collateral was paid with "atom" denomination
+	if len(ctx.Coins) != 1 || ctx.Coins[0].Denom != denomATOM {
+		return abci.ErrInternalError.AppendLog("Invalid coins or denomination")
 	}
 
+	// get amount paid
+	amount := ctx.Coins[0].Amount
+	if amount <= 0 {
+		return abci.ErrInternalError.AppendLog("Amount must be > 0")
+	}
+
+	// add newly-created collateral to list
 	state := loadState(store)
 	state.Collateral = state.Collateral.Add(Collateral{
 		ValidatorPubKey: tx.ValidatorPubKey,
@@ -77,40 +76,23 @@ func (sp *Plugin) runBondTx(tx BondTx, store types.KVStore, ctx types.CallContex
 	return abci.OK
 }
 
-func (sp *Plugin) runUnbondTx(tx UnbondTx, store types.KVStore, ctx types.CallContext) (res abci.Result) {
+func (sp Plugin) runUnbondTx(tx UnbondTx, store types.KVStore, ctx types.CallContext) (res abci.Result) {
 	if tx.Amount <= 0 {
-		log := "Unbond amount must be > 0"
-		return abci.ErrInternalError.AppendLog(log)
+		return abci.ErrInternalError.AppendLog("Unbond amount must be > 0")
 	}
 
 	state := loadState(store)
-
 	coll, i := state.Collateral.Get(ctx.CallerAddress, tx.ValidatorPubKey)
-	if coll == nil {
-		log := fmt.Sprintf(
-			"Address %X does not have any collateral delegated to validator %X",
-			ctx.CallerAddress,
-			tx.ValidatorPubKey,
-		)
-		return abci.ErrBaseUnknownAddress.AppendLog(log)
-	}
-	if coll.Amount < tx.Amount {
-		log := fmt.Sprintf(
-			"Not enough coins bonded (requested=%v, balance=%v)",
-			tx.Amount,
-			coll.Amount,
-		)
-		return abci.ErrBaseInsufficientFunds.AppendLog(log)
+
+	// fail if no collateral w/ this address+validator, or not enough bonded coins
+	if coll == nil || coll.Amount < tx.Amount {
+		return abci.ErrBaseInsufficientFunds.AppendLog("Could not unbond")
 	}
 
 	// subtract coins from collateral
-	if coll.Amount > tx.Amount {
-		state.Collateral[i].Amount -= tx.Amount
-	} else {
-		state.Collateral = state.Collateral.Remove(i)
-	}
+	state.Collateral[i].Amount -= tx.Amount
 
-	// create new unbond record, and add to end of queue
+	// create new unbond record
 	state.Unbonding = append(state.Unbonding, Unbond{
 		ValidatorPubKey: tx.ValidatorPubKey,
 		Amount:          tx.Amount,
@@ -124,10 +106,9 @@ func (sp *Plugin) runUnbondTx(tx UnbondTx, store types.KVStore, ctx types.CallCo
 }
 
 // InitChain from ABCI
-func (sp *Plugin) InitChain(store types.KVStore, vals []*abci.Validator) {
-	state := loadState(store)
-
+func (sp Plugin) InitChain(store types.KVStore, vals []*abci.Validator) {
 	// create collateral for initial validators
+	state := loadState(store)
 	for _, v := range vals {
 		state.Collateral.Add(Collateral{
 			ValidatorPubKey: v.PubKey,
@@ -135,7 +116,6 @@ func (sp *Plugin) InitChain(store types.KVStore, vals []*abci.Validator) {
 			Amount:          v.Power,
 		})
 	}
-
 	saveState(store, state)
 }
 
@@ -144,25 +124,17 @@ func (sp *Plugin) BeginBlock(store types.KVStore, height uint64) {
 	sp.height = height
 	state := loadState(store)
 
-	// If any unbonding requests have reached maturity, pay out coins into their
-	// basecoin accounts. `state.Unbonding` is a queue, so the lowest-index items
-	// should finish unbonding first.
+	// Once collateral is done unbonding, pay out coins into
+	// basecoin accounts
 	unbonding := state.Unbonding
-	for len(unbonding) > 0 {
-		if height-unbonding[0].Height < sp.params.UnbondingPeriod {
-			break
-		}
+	for len(unbonding) > 0 && height-unbonding[0].Height < sp.unbondingPeriod {
+		// remove first record from list
 		unbond := unbonding[0]
-		unbonding = unbonding[1:] // shift first record off list
+		unbonding = unbonding[1:]
 
 		// add unbonded coins to basecoin account
 		account := bcs.GetAccount(store, unbond.Address)
-		account.Balance = account.Balance.Plus(types.Coins{
-			types.Coin{
-				Denom:  sp.params.TokenDenom,
-				Amount: int64(unbond.Amount),
-			},
-		})
+		account.Balance = account.Balance.Plus(makeAtoms(unbond.Amount))
 		bcs.SetAccount(store, unbond.Address, account)
 	}
 
@@ -191,4 +163,14 @@ func loadState(store types.KVStore) *State {
 func saveState(store types.KVStore, state *State) {
 	bytes := wire.BinaryBytes(state)
 	store.Set([]byte("state"), bytes)
+}
+
+// returns a []Coin with a single coin of type ATOM
+func makeAtoms(amount uint64) types.Coins {
+	return types.Coins{
+		types.Coin{
+			Denom:  denomATOM,
+			Amount: int64(amount),
+		},
+	}
 }
