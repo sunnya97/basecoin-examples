@@ -1,23 +1,30 @@
 package main
 
 import (
-	"os"
+	"github.com/spf13/cobra"
 
-	_ "github.com/tendermint/basecoin-examples/paytovote/commands"
+	_ "github.com/tendermint/basecoin-examples/paytovote/cmd/paytovote/commands"
 	"github.com/tendermint/basecoin/cmd/commands"
-	"github.com/urfave/cli"
 )
 
 func main() {
-	app := cli.NewApp()
-	app.Name = "paytovote"
-	app.Usage = "paytovote [command] [args...]"
-	app.Version = "0.1.0"
-	app.Commands = []cli.Command{
+
+	var RootCmd = &cobra.Command{
+		Use: "paytovote",
+	}
+
+	RootCmd.AddCommand(
+		commands.InitCmd,
 		commands.StartCmd,
 		commands.TxCmd,
 		commands.QueryCmd,
+		commands.KeyCmd,
+		commands.VerifyCmd,
+		commands.BlockCmd,
 		commands.AccountCmd,
-	}
-	app.Run(os.Args)
+		commands.UnsafeResetAllCmd,
+		commands.QuickVersionCmd("0.2.0"),
+	)
+
+	commands.ExecuteWithDebug(RootCmd)
 }
