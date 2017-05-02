@@ -10,8 +10,8 @@ import:
   - cmd/commands
   - state
   - types
-- package: github.com/tendermint/go-common
-  version: develop
+- package: github.com/tendermint/tmlibs
+  version: basecoin-cli
 - package: github.com/tendermint/go-wire
   version: develop
 - package: github.com/spf13/cobra

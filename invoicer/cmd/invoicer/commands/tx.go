@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"github.com/tendermint/basecoin-examples/invoicer"
+	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
@@ -21,15 +21,15 @@ var (
 	voteForFlag bool
 
 	//commands
-	CreateProfileCmd = &cobra.Command{
+	InvoicerCmd = &cobra.Command{
 		Use:   "invoicer",
 		Short: "commands relating to invoicer system",
 	}
 
-	CreateProfileCmd = &cobra.Command{
+	NewProfileCmd = &cobra.Command{
 		Use:   "create-profile",
 		Short: "open a profile for sending/receiving invoices and expense claims",
-		RunE:  createProfileCmd,
+		RunE:  newProfileCmd,
 	}
 
 	OpenInvoiceCmd = &cobra.Command{
@@ -38,7 +38,7 @@ var (
 		RunE:  openInvoiceCmd,
 	}
 
-	OpenInvoiceCmd = &cobra.Command{
+	OpenExpenseCmd = &cobra.Command{
 		Use:   "expense",
 		Short: "send an expense",
 		RunE:  openExpenseCmd,
@@ -74,18 +74,39 @@ func init() {
 	bcmd.RegisterTxSubcommand(P2VCreateIssueCmd)
 }
 
-func createIssueCmd(cmd *cobra.Command, args []string) error {
+//type Invoice struct {
+//ID             []byte
+//AccSender      []byte
+//AccReceiver    []byte
+//DepositInfo    string
+//Amount         AmtCurTime
+//AcceptedCur    []Currency
+//TransactionID  string     //empty when unpaid
+//PaymentCurTime AmtCurTime //currency used to pay invoice, empty when unpaid
+//}
 
-	voteFee, err := bcmd.ParseCoins(voteFeeFlag)
-	if err != nil {
-		return err
-	}
+//type Expense struct {
+//Invoice
+//pdfReceipt []byte
+//notes      string
+//taxesPaid  AmtCurTime
+//}
 
-	createIssueFee := types.Coins{{"issueToken", 1}} //manually set the cost to create a new issue here
+//type Profile struct {
+//Receiver           []byte //address
+//Nickname           string //nickname for querying TODO check to make sure only one word
+//LegalName          string
+//acceptedCur        []currency //currencies you will accept payment in
+//DefaultDepositInfo string     //default deposit information (mostly for fiat)
+//dueDurationDays    int        //default duration until a sent invoice due date
+//}
+
+func createProfileCmd(cmd *cobra.Command, args []string) error {
+
+	createIssueFee := types.Coins{{"profileToken", 1}} //manually set the cost to create a new issue here
 
 	txBytes := invoicer.NewCreateIssueTxBytes(issueFlag, voteFee, createIssueFee)
 
-	fmt.Println("Issue creation transaction sent")
 	return bcmd.AppTx(InvoicerName, txBytes)
 }
 
@@ -100,35 +121,4 @@ func voteCmd(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Vote transaction sent")
 	return bcmd.AppTx(InvoicerName, txBytes)
-}
-
-func queryIssueCmd(cmd *cobra.Command, args []string) error {
-
-	//get the parent context
-	parentContext := cmd.Parent()
-
-	//get the issue, generate issue key
-	if len(args) != 1 {
-		return fmt.Errorf("query command requires an argument ([issue])") //never stack trace
-	}
-	issue := args[0]
-	issueKey := invoicer.IssueKey(issue)
-
-	//perform the query, get response
-	resp, err := bcmd.Query(parentContext.Flag("node").Value.String(), issueKey)
-	if err != nil {
-		return err
-	}
-	if !resp.Code.IsOK() {
-		return errors.Errorf("Query for issueKey (%v) returned non-zero code (%v): %v",
-			string(issueKey), resp.Code, resp.Log)
-	}
-
-	//get the invoicer issue object and print it
-	p2vIssue, err := invoicer.GetIssueFromWire(resp.Value)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(wire.JSONBytes(p2vIssue)))
-	return nil
 }

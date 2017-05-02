@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"github.com/tendermint/basecoin-examples/invoicer"
+	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
@@ -26,7 +26,7 @@ var (
 
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
-		Use:   "invoice [invoice id hex]",
+		Use:   "invoice [hexID]",
 		Short: "Query an invoice by invoice ID",
 		RunE:  queryInvoiceCmd,
 	}
@@ -74,10 +74,10 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 
 	//get the issue, generate issue key
 	if len(args) != 1 {
-		return fmt.Errorf("query command requires an argument ([issue])") //never stack trace
+		return fmt.Errorf("query command requires an argument ([hexID])") //never stack trace
 	}
-	issue := args[0]
-	issueKey := invoicer.IssueKey(issue)
+	hexID := args[0]
+	issueKey := invoicer.InvoiceKey(issue)
 
 	//perform the query, get response
 	resp, err := bcmd.Query(parentContext.Flag("node").Value.String(), issueKey)
