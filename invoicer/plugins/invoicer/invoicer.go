@@ -12,7 +12,7 @@ import (
 	cmn "github.com/tendermint/tmlibs/common"
 )
 
-const name = "invoicer"
+const invoicerName = "invoicer"
 
 type Invoicer struct {
 	name string
@@ -20,7 +20,7 @@ type Invoicer struct {
 
 func New() *Invoicer {
 	return &Invoicer{
-		name: name,
+		name: invoicerName,
 	}
 }
 
@@ -35,12 +35,12 @@ func newP2VIssue(issue string, feePerVote btypes.Coins) P2VIssue {
 	}
 }
 
-func ProfileKey(address string) []byte {
-	return []byte(cmn.Fmt("%v,Profile=%v", name, address))
+func ProfileKey(name string) []byte {
+	return []byte(cmn.Fmt("%v,Profile=%v", invoicerName, name))
 }
 
 func InvoicerKey(ID int) []byte {
-	return []byte(cmn.Fmt("%v,ID=%v", name, ID))
+	return []byte(cmn.Fmt("%v,ID=%v", invoicerName, ID))
 }
 
 //get an Invoice from store bytes
@@ -74,8 +74,8 @@ func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
 	return in, err
 }
 
-func getProfile(store btypes.KVStore, address string) (profile Profile, err error) {
-	bytes := store.Get(ProfileKey(address))
+func getProfile(store btypes.KVStore, name string) (profile Profile, err error) {
+	bytes := store.Get(ProfileKey(name))
 	return GetProfileFromWire(bytes)
 }
 
@@ -85,7 +85,7 @@ func getInvoice(store btypes.KVStore, ID int) (invoice Invoice, err error) {
 }
 
 func getExpense(store btypes.KVStore, ID int) (expense Expense, err error) {
-	bytes := store.Get(InvoicerKey(address))
+	bytes := store.Get(ExpenseKey(address))
 	return GetExpenseFromWire(bytes)
 }
 
@@ -117,10 +117,14 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 
 	//Note that the zero position of txBytes contains the type-byte for the tx type
 	switch txBytes[0] {
-	case TypeByteTxCreate:
-		return inv.runTxCreateIssue(store, ctx, txBytes[1:])
-	case TypeByteTxVote:
-		return inv.runTxVote(store, ctx, txBytes[1:])
+	case types.TBTxNewProfile:
+		return inv.runTxNewProfile(store, ctx, txBytes[1:])
+	case types.TBTxOpenInvoice:
+		return inv.runTxOpenInvoice(store, ctx, txBytes[1:])
+	case types.TBTxOpenExpense:
+		return inv.runTxOpenExpense(store, ctx, txBytes[1:])
+	case types.TBTxClose:
+		return inv.runTxClose(store, ctx, txBytes[1:])
 	default:
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: bad prepended bytes")
 	}
@@ -138,46 +142,45 @@ func chargeFee(store btypes.KVStore, ctx btypes.CallContext, fee btypes.Coins) {
 	}
 }
 
-func (inv *Invoicer) runTxCreateIssue(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func (inv *Invoicer) runTxNewProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
-	var tx createIssueTx
-	err := wire.ReadBinaryBytes(txBytes, &tx)
+	var profile Profile
+	err := wire.ReadBinaryBytes(txBytes, &profile)
 	if err != nil {
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
+
+	fee := btypes.Coins{{"ProfileToken", 1}}
 
 	//Validate Tx
 	switch {
 	case len(tx.Issue) == 0:
 		return abci.ErrInternalError.AppendLog("P2VTx.Issue must have a length greater than 0")
-	case !tx.FeePerVote.IsValid():
-		return abci.ErrInternalError.AppendLog("P2VTx.Fee2Vote is not sorted or has zero amounts")
-	case !tx.FeePerVote.IsNonnegative():
-		return abci.ErrInternalError.AppendLog("P2VTx.Fee2Vote must be nonnegative")
-	case !tx.Fee2CreateIssue.IsValid():
-		return abci.ErrInternalError.AppendLog("P2VTx.Fee2CreateIssue is not sorted or has zero amounts")
-	case !tx.Fee2CreateIssue.IsNonnegative():
-		return abci.ErrInternalError.AppendLog("P2VTx.Fee2CreateIssue must be nonnegative")
-	case !ctx.Coins.IsGTE(tx.Fee2CreateIssue): // Did the caller provide enough coins?
-		return abci.ErrInsufficientFunds.AppendLog("Tx Funds insufficient for creating a new issue")
+	case len(profile.Nickname) == 0:
+		return abci.ErrInternalError.AppendLog("new profile must have nickname")
+	case len(profile.AcceptedCur) == 0:
+		return abci.ErrInternalError.AppendLog("new profile must have at least one accepted currency")
+	case DueDurationDays < 0:
+		return abci.ErrInternalError.AppendLog("new profile due duration must be non-negative")
+	case !ctx.Coins.IsGTE(fee): // Did the caller provide enough coins?
+		return abci.ErrInsufficientFunds.AppendLog("Tx Funds insufficient for creating a new profile")
 	}
 
 	//Return if the issue already exists, aka no error was thrown
-	if _, err := getIssue(store, tx.Issue); err == nil {
-		return abci.ErrInternalError.AppendLog("Cannot create an already existing issue")
+	if _, err := getProfile(store, profile.Name); err == nil {
+		return abci.ErrInternalError.AppendLog("Cannot create an already existing Profile")
 	}
 
-	// Create and Save P2VIssue, charge fee, return
-	newP2VIssue := newP2VIssue(tx.Issue, tx.FeePerVote)
-	store.Set(IssueKey(tx.Issue), wire.BinaryBytes(newP2VIssue))
-	chargeFee(store, ctx, tx.Fee2CreateIssue)
+	//Store profile and charge fee
+	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(profile))
+	chargeFee(store, ctx, fee)
 	return abci.OK
 }
 
 func (inv *Invoicer) runTxVote(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
-	// Decode tx
+	//Decode tx
 	var tx voteTx
 	err := wire.ReadBinaryBytes(txBytes, &tx)
 	if err != nil {
@@ -189,13 +192,13 @@ func (inv *Invoicer) runTxVote(store btypes.KVStore, ctx btypes.CallContext, txB
 		return abci.ErrInternalError.AppendLog("transaction issue must have a length greater than 0")
 	}
 
-	// Load P2VIssue
+	//Load P2VIssue
 	p2vIssue, err := getIssue(store, tx.Issue)
 	if err != nil {
 		return abci.ErrInternalError.AppendLog("error loading issue: " + err.Error())
 	}
 
-	// Did the caller provide enough coins?
+	//Did the caller provide enough coins?
 	if !ctx.Coins.IsGTE(p2vIssue.FeePerVote) {
 		return abci.ErrInsufficientFunds.AppendLog("Tx Funds insufficient for voting")
 	}
@@ -210,7 +213,7 @@ func (inv *Invoicer) runTxVote(store btypes.KVStore, ctx btypes.CallContext, txB
 		return abci.ErrInternalError.AppendLog("P2VTx.VoteTypeByte was not recognized")
 	}
 
-	// Save P2VIssue, charge fee, return
+	//Save P2VIssue, charge fee, return
 	store.Set(IssueKey(tx.Issue), wire.BinaryBytes(p2vIssue))
 	chargeFee(store, ctx, p2vIssue.FeePerVote)
 	return abci.OK

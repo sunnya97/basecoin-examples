@@ -12,8 +12,6 @@ import (
 	"github.com/tendermint/go-wire"
 )
 
-const InvoicerName = "invoicer"
-
 var (
 	//flags
 	num         int

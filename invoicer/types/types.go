@@ -34,114 +34,121 @@ type AmtCurTime struct {
 ///////////////////////////////
 
 type Profile struct {
-	Address            []byte //address
-	Nickname           string //nickname for querying TODO check to make sure only one word
-	LegalName          string
-	AcceptedCur        []currency //currencies you will accept payment in
-	DefaultDepositInfo string     //default deposit information (mostly for fiat)
-	DueDurationDays    int        //default duration until a sent invoice due date
+	Name               string        //identifier for querying
+	AcceptedCur        currency      //currency you will accept payment in
+	DefaultDepositInfo string        //default deposit information (mostly for fiat)
+	DueDurationDays    int           //default duration until a sent invoice due date
+	Timezone           time.Location //default duration until a sent invoice due date
+}
+
+func NewProfile(Name string, AcceptedCur currency,
+	DefaultDepositInfo string, DueDurationDays int) Profile {
+	return Proflie{
+		Name:               Name,
+		AcceptedCur:        AcceptedCur,
+		DefaultDepositInfo: DefaultDepositInfo,
+		DueDurationDays:    DueDurationDays,
+	}
+}
+
+func NewTxBytesNewProfile(Name string, AcceptedCur currency,
+	DefaultDepositInfo string, DueDurationDays int) []byte {
+
+	data := wire.BinaryBytes(NewProfile(Address, Nickname, LegalName,
+		AcceptedCur, DefaultDepositInfo, DueDurationDays))
+	data = append([]byte{TBTxNewProfile}, data...)
+	return data
 }
 
 type Invoice struct {
 	ID             int
-	AccSender      []byte
-	AccReceiver    []byte
+	Sender         string
+	Receiver       string
 	DepositInfo    string
-	Amount         AmtCurTime
-	AcceptedCur    []Currency
-	TransactionID  string     //empty when unpaid
-	PaymentCurTime AmtCurTime //currency used to pay invoice, empty when unpaid
+	Amount         *AmtCurTime
+	AcceptedCur    Currency
+	TransactionID  string      //empty when unpaid
+	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-type Expense struct {
-	Invoice
-	pdfReceipt []byte
-	notes      string
-	taxesPaid  AmtCurTime
-}
-
-type Close struct {
-	ID int
-}
-
-func NewTxBytesNewProfile(Address []byte, Nickname string, LegalName string,
-	AcceptedCur []currency, DefaultDepositInfo string, DueDurationDays int) []byte {
-
-	data := wire.BinaryBytes(
-		Proflie{
-			Address:            Address,
-			Nickname:           Nickname,
-			LegalName:          LegalName,
-			AcceptedCur:        AcceptedCur,
-			DefaultDepositInfo: DefaultDepositInfo,
-			DueDurationDays:    DueDurationDays,
-		})
-	data = append([]byte{TBTxNewProfile}, data...)
-	return data
+func NewInvoice(ID int, Sender []byte, Receiver []byte, DepositInfo string,
+	Amount AmtCurTime, AcceptedCur Currency) Invoice {
+	return Invoice{
+		ID:             ID,
+		Sender:         Sender,
+		Receiver:       Receiver,
+		DepositInfo:    DepositInfo,
+		Amount:         Amount,
+		AcceptedCur:    AcceptedCur,
+		TransactionID:  "",
+		PaymentCurTime: nil,
+	}
 }
 
 func NewTxBytesOpenInvoice(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
-	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime AmtCurTime) []byte {
+	Amount *AmtCurTime, AcceptedCur Currency, TransactionID string, PaymentCurTime *AmtCurTime) []byte {
 
-	data := wire.BinaryBytes(
-		Invoice{
-			ID:             ID,
-			AccSender:      AccSender,
-			AccReceiver:    AccReceiver,
-			DepositInfo:    DepositInfo,
-			Amount:         Amount,
-			AcceptedCur:    AcceptedCur,
-			TransactionID:  TransactionID,
-			PaymentCurTime: PaymentCurTime,
-		})
+	data := wire.BinaryBytes(NewInvoice(ID, AccSender, AccReceiver, DepositInfo,
+		Amount, AcceptedCur, TransactionID, PaymentCurTime))
 	data = append([]byte{TBTxOpenInvoice}, data...)
 	return data
 }
 
-func NewTxBytesOpenExpense(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
-	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime AmtCurTime,
-	pdfReceipt []byte, notes string, taxesPaid AmtCurTime) []byte {
+type Expense struct {
+	Invoice
+	PDFReceipt  []byte
+	PDFFileName string
+	Notes       string
+	TaxesPaid   AmtCurTime
+}
 
-	data := wire.BinaryBytes(
-		Expense{
-			ID:             ID,
-			AccSender:      AccSender,
-			AccReceiver:    AccReceiver,
-			DepositInfo:    DepositInfo,
-			Amount:         Amount,
-			AcceptedCur:    AcceptedCur,
-			TransactionID:  TransactionID,
-			PaymentCurTime: PaymentCurTime,
-			pdfReceipt:     pdfReceipt,
-			notes:          notes,
-			taxesPaid:      taxesPaid,
-		})
+func NewExpense(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
+	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime *AmtCurTime,
+	pdfReceipt []byte, notes string, taxesPaid *AmtCurTime) Expense {
+
+	return Expense{
+		ID:             ID,
+		AccSender:      AccSender,
+		AccReceiver:    AccReceiver,
+		DepositInfo:    DepositInfo,
+		Amount:         Amount,
+		AcceptedCur:    AcceptedCur,
+		TransactionID:  TransactionID,
+		PaymentCurTime: PaymentCurTime,
+		pdfReceipt:     pdfReceipt,
+		notes:          notes,
+		taxesPaid:      taxesPaid,
+	}
+}
+
+func NewTxBytesOpenExpense(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
+	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime *AmtCurTime,
+	pdfReceipt []byte, notes string, taxesPaid *AmtCurTime) []byte {
+
+	data := wire.BinaryBytes(NewExpense(ID, AccSender, AccReceiver, DepositInfo,
+		Amount, AcceptedCur, TransactionID, PaymentCurTime,
+		pdfReceipt, notes, taxesPaid))
 	data = append([]byte{TBTxOpenExpense}, data...)
 	return data
 }
 
-func NewTxBytesClose(ID int) []byte {
-
-	data := wire.BinaryBytes(
-		Close{
-			ID: ID,
-		})
-	data = append([]byte{TBTxClose}, data...)
-	return data
+type Close struct {
+	ID             int
+	TransactionID  string      //empty when unpaid
+	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewTxBytesNewProfile(Address []byte, Nickname string, LegalName string,
-	AcceptedCur []currency, DefaultDepositInfo string, DueDurationDays int) []byte {
+func NewClose(ID int, TransactionID string, PaymentCurTime *AmtCurTime) Close {
+	return Close{
+		ID:             ID,
+		TransactionID:  TransactionID,
+		PaymentCurTime: PaymentCurTime,
+	}
 
-	data := wire.BinaryBytes(
-		Proflie{
-			Address:            Address,
-			Nickname:           Nickname,
-			LegalName:          LegalName,
-			AcceptedCur:        AcceptedCur,
-			DefaultDepositInfo: DefaultDepositInfo,
-			DueDurationDays:    DueDurationDays,
-		})
-	data = append([]byte{TBTxNewProfile}, data...)
+}
+
+func NewTxBytesClose(ID int) []byte {
+	data := wire.BinaryBytes(NewClose(ID))
+	data = append([]byte{TBTxClose}, data...)
 	return data
 }

@@ -23,7 +23,7 @@ func main() {
 		commands.BlockCmd,
 		commands.AccountCmd,
 		commands.UnsafeResetAllCmd,
-		commands.QuickVersionCmd("0.2.0"),
+		commands.QuickVersionCmd("0.1.0"),
 	)
 
 	commands.ExecuteWithDebug(RootCmd)
