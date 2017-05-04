@@ -39,8 +39,8 @@ func ProfileKey(name string) []byte {
 	return []byte(cmn.Fmt("%v,Profile=%v", invoicerName, name))
 }
 
-func InvoicerKey(ID int) []byte {
-	return []byte(cmn.Fmt("%v,ID=%v", invoicerName, ID))
+func InvoicerKey(ID []byte) []byte {
+	return []byte(cmn.Fmt("%v,ID=%x", invoicerName, ID))
 }
 
 //get an Invoice from store bytes
@@ -79,13 +79,13 @@ func getProfile(store btypes.KVStore, name string) (profile Profile, err error) 
 	return GetProfileFromWire(bytes)
 }
 
-func getInvoice(store btypes.KVStore, ID int) (invoice Invoice, err error) {
-	bytes := store.Get(InvoicerKey(address))
+func getInvoice(store btypes.KVStore, ID []byte) (invoice Invoice, err error) {
+	bytes := store.Get(InvoicerKey(ID))
 	return GetInvoiceFromWire(bytes)
 }
 
-func getExpense(store btypes.KVStore, ID int) (expense Expense, err error) {
-	bytes := store.Get(ExpenseKey(address))
+func getExpense(store btypes.KVStore, ID []byte) (expense Expense, err error) {
+	bytes := store.Get(ExpenseKey(ID))
 	return GetExpenseFromWire(bytes)
 }
 
@@ -116,6 +116,7 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 	}
 
 	//Note that the zero position of txBytes contains the type-byte for the tx type
+	//TODO add options for editing existing profile
 	switch txBytes[0] {
 	case types.TBTxNewProfile:
 		return inv.runTxNewProfile(store, ctx, txBytes[1:])
@@ -130,18 +131,6 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 	}
 }
 
-func chargeFee(store btypes.KVStore, ctx btypes.CallContext, fee btypes.Coins) {
-
-	//Charge the Fee from the context coins
-	leftoverCoins := ctx.Coins.Minus(fee)
-	if !leftoverCoins.IsZero() {
-		acc := ctx.CallerAccount
-		//return leftover coins
-		acc.Balance = acc.Balance.Plus(leftoverCoins)   // subtract fees
-		state.SetAccount(store, ctx.CallerAddress, acc) // save the new balance
-	}
-}
-
 func (inv *Invoicer) runTxNewProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
@@ -151,20 +140,14 @@ func (inv *Invoicer) runTxNewProfile(store btypes.KVStore, ctx btypes.CallContex
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
-	fee := btypes.Coins{{"ProfileToken", 1}}
-
 	//Validate Tx
 	switch {
-	case len(tx.Issue) == 0:
-		return abci.ErrInternalError.AppendLog("P2VTx.Issue must have a length greater than 0")
-	case len(profile.Nickname) == 0:
-		return abci.ErrInternalError.AppendLog("new profile must have nickname")
+	case len(profile.Name) == 0:
+		return abci.ErrInternalError.AppendLog("new profile must have a name")
 	case len(profile.AcceptedCur) == 0:
-		return abci.ErrInternalError.AppendLog("new profile must have at least one accepted currency")
+		return abci.ErrInternalError.AppendLog("new profile must have an accepted currency")
 	case DueDurationDays < 0:
 		return abci.ErrInternalError.AppendLog("new profile due duration must be non-negative")
-	case !ctx.Coins.IsGTE(fee): // Did the caller provide enough coins?
-		return abci.ErrInsufficientFunds.AppendLog("Tx Funds insufficient for creating a new profile")
 	}
 
 	//Return if the issue already exists, aka no error was thrown
@@ -172,50 +155,132 @@ func (inv *Invoicer) runTxNewProfile(store btypes.KVStore, ctx btypes.CallContex
 		return abci.ErrInternalError.AppendLog("Cannot create an already existing Profile")
 	}
 
-	//Store profile and charge fee
+	//Store profile
 	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(profile))
-	chargeFee(store, ctx, fee)
 	return abci.OK
 }
 
-func (inv *Invoicer) runTxVote(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func (inv *Invoicer) runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
-	//Decode tx
-	var tx voteTx
-	err := wire.ReadBinaryBytes(txBytes, &tx)
+	// Decode tx
+	var invoice Invoice
+	err := wire.ReadBinaryBytes(txBytes, &invoice)
 	if err != nil {
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
 	//Validate Tx
-	if len(tx.Issue) == 0 {
-		return abci.ErrInternalError.AppendLog("transaction issue must have a length greater than 0")
+	switch {
+	case len(invoice.Ctx.Sender) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a sender")
+	case len(invoice.Ctx.Receiver) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
+	case len(invoice.Ctx.AcceptedCur) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
+	case invoice.Ctx.Amount == nil:
+		return abci.ErrInternalError.AppendLog("invoice amount is nil")
+	case invoice.Ctx.Due.Before(time.Now):
+		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
 	}
 
-	//Load P2VIssue
-	p2vIssue, err := getIssue(store, tx.Issue)
+	(&invoice).SetID()
+
+	if _, err := getProfile(store, invoice.Ctx.Sender); err != nil {
+		return abci.ErrInternalError.AppendLog("Senders Profile doesn't exist")
+	}
+
+	if _, err := getProfile(store, invoice.Ctx.Receiver); err != nil {
+		return abci.ErrInternalError.AppendLog("Receiver profile doesn't exist")
+	}
+
+	//Return if the invoice already exists, aka no error was thrown
+	if _, err := getInvoice(store, invoice.ID); err == nil {
+		return abci.ErrInternalError.AppendLog("Duplicate Invoice, edit the invoice notes to make them unique")
+	}
+
+	//Store profile
+	store.Set(InvoicerKey(invoice.ID), wire.BinaryBytes(invoice))
+	return abci.OK
+}
+
+func (inv *Invoicer) runTxOpenExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+
+	// Decode tx
+	var expense Expense
+	err := wire.ReadBinaryBytes(txBytes, &expense)
 	if err != nil {
-		return abci.ErrInternalError.AppendLog("error loading issue: " + err.Error())
+		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
-	//Did the caller provide enough coins?
-	if !ctx.Coins.IsGTE(p2vIssue.FeePerVote) {
-		return abci.ErrInsufficientFunds.AppendLog("Tx Funds insufficient for voting")
+	//Validate Tx
+	switch {
+	case len(expense.Ctx.Sender) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a sender")
+	case len(expense.Ctx.Receiver) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
+	case len(expense.Ctx.AcceptedCur) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
+	case expense.Ctx.Amount == nil:
+		return abci.ErrInternalError.AppendLog("invoice amount is nil")
+	case expense.Ctx.Due.Before(time.Now):
+		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
 	}
 
-	//Transaction Logic
-	switch tx.VoteTypeByte {
-	case TypeByteVoteFor:
-		p2vIssue.VotesFor += 1
-	case TypeByteVoteAgainst:
-		p2vIssue.VotesAgainst += 1
+	(&expense).SetID()
+
+	if _, err := getProfile(store, expense.Ctx.Sender); err != nil {
+		return abci.ErrInternalError.AppendLog("Senders Profile doesn't exist")
+	}
+
+	if _, err := getProfile(store, expense.Ctx.Receiver); err != nil {
+		return abci.ErrInternalError.AppendLog("Receiver profile doesn't exist")
+	}
+
+	//Return if the invoice already exists, aka no error was thrown
+	if _, err := getExpense(store, expense.ID); err == nil {
+		return abci.ErrInternalError.AppendLog("Duplicate Invoice, edit the invoice notes to make them unique")
+	}
+
+	//Store profile
+	store.Set(InvoicerKey(expense.ID), wire.BinaryBytes(expense))
+	return abci.OK
+}
+
+func (inv *Invoicer) runTxClose(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+
+	// Decode tx
+	var close Close
+	err := wire.ReadBinaryBytes(txBytes, &close)
+	if err != nil {
+		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
+	}
+
+	//Validate Tx
+	switch {
+	case len(close.ID) == 0:
+		return abci.ErrInternalError.AppendLog("closer doesn't have an ID")
+	case len(close.TransactionID) == 0:
+		return abci.ErrInternalError.AppendLog("closer must include a transaction ID")
+	}
+
+	//actually write the changes
+	switch close.ID[0] {
+	case TBIDExpense:
+		invoice, err := getExpense(store, close.ID)
+		if err != nil {
+			return abci.ErrInternalError.AppendLog("Expense ID is missing from existing expense")
+		}
+		store.Set(InvoicerKey(close.ID), wire.BinaryBytes(expense))
+	case TBIDInvoice:
+		invoice, err := getInvoice(store, close.ID)
+		if err != nil {
+			return abci.ErrInternalError.AppendLog("Invoice ID is missing from existing invoices")
+		}
+		store.Set(InvoicerKey(close.ID), wire.BinaryBytes(invoice))
 	default:
-		return abci.ErrInternalError.AppendLog("P2VTx.VoteTypeByte was not recognized")
+		return abci.ErrInternalError.AppendLog("ID Typebyte neither invoice nor expense")
 	}
 
-	//Save P2VIssue, charge fee, return
-	store.Set(IssueKey(tx.Issue), wire.BinaryBytes(p2vIssue))
-	chargeFee(store, ctx, p2vIssue.FeePerVote)
 	return abci.OK
 }
 

@@ -6,11 +6,15 @@ import (
 	"github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
 	cmn "github.com/tendermint/tmlibs/common"
+	"github.com/tendermint/tmlibs/merkle"
 
 	"github.com/shopspring/decimal"
 )
 
 const (
+	TBIDExpense byte = 0x01
+	TBIDInvoice byte = 0x02
+
 	TBTxNewProfile  byte = 0x01
 	TBTxOpenInvoice byte = 0x02
 	TBTxOpenExpense byte = 0x03
@@ -26,9 +30,54 @@ type CurTime struct {
 	date time.Time
 }
 
-type AmtCurTime struct {
-	cur    curTime
+type AmtCurDate struct {
+	cur    curDate
 	amount decimal
+}
+
+func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
+
+	var coin Coin
+	if len(amtCur) == 0 {
+		return nil, errors.New("not enought information to parse AmtCurDate")
+	}
+
+	var reAmt = regexp.MustCompile("(\\d+)")
+	amt, err := strconv.Atoi(reAmt.FindString(amtCur))
+	if err != nil {
+		return nil, err
+	}
+
+	var reCur = regexp.MustCompile("([^\\d\\W]+)")
+	cur := reCur.FindString(amtCur)
+
+	return &AmtCurDate{CurTime{cur, date}, amt}, nil
+}
+
+func ParseDate(date string, timezone string) (time.Time, error) {
+
+	//get the time of invoice
+	t := time.Now()
+	if len(flagTimezone) > 0 {
+
+		tz := time.UTC
+		if len(flagTimezone) > 0 {
+			tz, err := time.LoadLocation(flagTimezone)
+			if err != nil {
+				return t, fmt.Errorf("error loading timezone, error: ", err) //never stack trace
+			}
+		}
+
+		ymd := strings.Split(flagDate, "-")
+		if len(ymd) != 3 {
+			return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
+		}
+
+		t = time.Date(ymd[0], time.Month(ymd[1]), ymd[2], 0, 0, 0, 0, tz)
+
+	}
+
+	return t, nil
 }
 
 ///////////////////////////////
@@ -61,84 +110,111 @@ func NewTxBytesNewProfile(Name string, AcceptedCur currency,
 }
 
 type Invoice struct {
-	ID             int
-	Sender         string
-	Receiver       string
-	DepositInfo    string
-	Amount         *AmtCurTime
-	AcceptedCur    Currency
+	Ctx            Context
+	ID             []byte
 	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
 }
 
-func NewInvoice(ID int, Sender []byte, Receiver []byte, DepositInfo string,
-	Amount AmtCurTime, AcceptedCur Currency) Invoice {
+//struct used for hash to determine ID
+type Context struct {
+	Sender      string
+	Receiver    string
+	DepositInfo string
+	Notes       string
+	Amount      *AmtCurDate
+	AcceptedCur Currency
+	Due         time.Time
+}
+
+func (i Invoice) SetID() {
+	hashBytes := merkle.SimpleHashFromBinary(i.Context)
+	i.ID = append([]byte{TBIDInvoice}, hashBytes...)
+}
+
+func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
+	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) Invoice {
 	return Invoice{
-		ID:             ID,
-		Sender:         Sender,
-		Receiver:       Receiver,
-		DepositInfo:    DepositInfo,
-		Amount:         Amount,
-		AcceptedCur:    AcceptedCur,
+		Context{
+			Sender:      Sender,
+			Receiver:    Receiver,
+			DepositInfo: DepositInfo,
+			Notes:       Notes,
+			Amount:      Amount,
+			AcceptedCur: AcceptedCur,
+			Due:         Due,
+		},
+		ID:             nil,
 		TransactionID:  "",
 		PaymentCurTime: nil,
 	}
 }
 
-func NewTxBytesOpenInvoice(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
-	Amount *AmtCurTime, AcceptedCur Currency, TransactionID string, PaymentCurTime *AmtCurTime) []byte {
+func NewTxBytesOpenInvoice(Sender, Receiver, DepositInfo, Notes string,
+	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) []bytes {
 
-	data := wire.BinaryBytes(NewInvoice(ID, AccSender, AccReceiver, DepositInfo,
-		Amount, AcceptedCur, TransactionID, PaymentCurTime))
+	data := wire.BinaryBytes(NewInvoice(Sender, Receiver, DepositInfo, Notes,
+		Amount, AcceptedCur, Due))
 	data = append([]byte{TBTxOpenInvoice}, data...)
 	return data
 }
 
 type Expense struct {
-	Invoice
-	PDFReceipt  []byte
-	PDFFileName string
-	Notes       string
-	TaxesPaid   AmtCurTime
+	Ctx            Context
+	ID             []byte
+	Document       []byte
+	DocFileName    string
+	ExpenseTaxes   AmtCurDate
+	TransactionID  string      //empty when unpaid
+	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
 }
 
-func NewExpense(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
-	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime *AmtCurTime,
-	pdfReceipt []byte, notes string, taxesPaid *AmtCurTime) Expense {
+func (e *Expense) SetID() {
+	hashBytes := merkle.SimpleHashFromBinary(e.Context)
+	e.ID = append([]byte{TBIDExpense}, hashBytes...)
+}
+
+func NewExpense(Sender, Receiver, DepositInfo, Notes string,
+	Amount AmtCurDate, AcceptedCur Currency, Due time.Time,
+	Document []byte, DocFilename, ExpenseTaxes *AmtCurDate) Expense {
 
 	return Expense{
-		ID:             ID,
-		AccSender:      AccSender,
-		AccReceiver:    AccReceiver,
-		DepositInfo:    DepositInfo,
-		Amount:         Amount,
-		AcceptedCur:    AcceptedCur,
-		TransactionID:  TransactionID,
-		PaymentCurTime: PaymentCurTime,
-		pdfReceipt:     pdfReceipt,
-		notes:          notes,
-		taxesPaid:      taxesPaid,
+		Context{
+			Sender:      Sender,
+			Receiver:    Receiver,
+			DepositInfo: DepositInfo,
+			Notes:       Notes,
+			Amount:      Amount,
+			AcceptedCur: AcceptedCur,
+			Due:         Due,
+		},
+		ID:             nil,
+		Document:       Document,
+		DocFileName:    DocFileName,
+		ExpenseTaxes:   ExpenseTaxes,
+		TransactionID:  "",
+		PaymentCurTime: nil,
 	}
 }
 
-func NewTxBytesOpenExpense(ID int, AccSender []byte, AccReceiver []byte, DepositInfo string,
-	Amount AmtCurTime, AcceptedCur []Currency, TransactionID string, PaymentCurTime *AmtCurTime,
-	pdfReceipt []byte, notes string, taxesPaid *AmtCurTime) []byte {
+func NewTxBytesOpenExpense(Sender, Receiver, DepositInfo, Notes string,
+	Amount AmtCurDate, AcceptedCur Currency, Due time.Time,
+	Document []byte, DocFilename, TaxesPaid *AmtCurDate) []byte {
 
-	data := wire.BinaryBytes(NewExpense(ID, AccSender, AccReceiver, DepositInfo,
-		Amount, AcceptedCur, TransactionID, PaymentCurTime,
-		pdfReceipt, notes, taxesPaid))
+	data := wire.BinaryBytes(NewExpense(Sender, Receiver, DepositInfo, Notes,
+		Amount, AcceptedCur, Due, Document, DocFilename, TaxesPaid))
+
 	data = append([]byte{TBTxOpenExpense}, data...)
 	return data
 }
 
 type Close struct {
-	ID             int
+	ID             []byte
 	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
 }
 
-func NewClose(ID int, TransactionID string, PaymentCurTime *AmtCurTime) Close {
+func NewClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurDate) Close {
 	return Close{
 		ID:             ID,
 		TransactionID:  TransactionID,
@@ -147,8 +223,8 @@ func NewClose(ID int, TransactionID string, PaymentCurTime *AmtCurTime) Close {
 
 }
 
-func NewTxBytesClose(ID int) []byte {
-	data := wire.BinaryBytes(NewClose(ID))
+func NewTxBytesClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurDate) []byte {
+	data := wire.BinaryBytes(NewClose(ID, TransactionID, PaymentCurTime))
 	data = append([]byte{TBTxClose}, data...)
 	return data
 }

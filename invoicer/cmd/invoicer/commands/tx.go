@@ -9,6 +9,7 @@ package commands
 
 import (
 	"fmt"
+	"io/ioutil"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/go-wire"
+	"github.com/tendermint/tmlibs/merkle"
 )
 
 const invoicerName = "invoicer"
@@ -29,22 +31,22 @@ var (
 	flagTimezone           string
 
 	//invoice flags
-	flagSender      string //hex
 	flagReceiver    string //hex
 	flagDepositInfo string
-	flagAmount      string //AmtCurTime
+	flagNotes       string
+	flagAmount      string //AmtCurDate
 	flagDate        string
 	flagCur         string
+	flagDue         string
 
 	//expense flags
-	flagPdfReceipt string //hex
-	flagNotes      string
-	flagTaxesPaid  string //AmtCurTime
+	flagReceiptFile string //hex
+	flagNotes       string
+	flagTaxesPaid   string //AmtCurDate
 
 	//close flags
-	flagID             string //hex
 	flagTransactionID  string //empty when unpaid
-	flagPaymentCurTime string //AmtCurTime
+	flagPaymentCurTime string //AmtCurDate
 
 	//commands
 	InvoicerCmd = &cobra.Command{
@@ -59,19 +61,19 @@ var (
 	}
 
 	OpenInvoiceCmd = &cobra.Command{
-		Use:   "invoice",
+		Use:   "invoice [sender][amount]",
 		Short: "send an invoice",
 		RunE:  openInvoiceCmd,
 	}
 
 	OpenExpenseCmd = &cobra.Command{
-		Use:   "expense",
+		Use:   "expense [sender][amount]",
 		Short: "send an expense",
 		RunE:  openExpenseCmd,
 	}
 
 	CloseCmd = &cobra.Command{
-		Use:   "close",
+		Use:   "close [ID]",
 		Short: "close an invoice or expense",
 		RunE:  openExpenseCmd,
 	}
@@ -90,25 +92,24 @@ func init() {
 	}
 
 	invoiceFlags := []bcmd.Flag2Register{
-		{&flagSender, "sender", "", "name of invoice/expense sender"},
 		{&lagReceiver, "receiver", "allinbits", "name of the invoice/expense receiver"},
-		{&flagDepositInfo, "info", "", "deposit information for invoice payment"},
-		{&flagAmount, "amount", "", "invoice/expense amount in the format <currency><decimal> eg. usd100.23"},
+		{&flagDepositInfo, "deposit", "", "deposit information for invoice payment (default: profile)"},
+		{&flagNotes, "notes", "", "notes regarding the expense"},
+		{&flagAmount, "amount", "", "invoice/expense amount in the format <decimal><currency> eg. 100.23usd"},
 		{&flagInvoiceDate, "date", "", "invoice/expense date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)"},
-		{&flagTimezone, "timezone", "", "invoice/expense timezone (default: profile timezone)"},
+		{&flagTimezone, "timezone", "", "invoice/expense timezone (default: profile)"},
 		{&flagCur, "cur", "btc", "currency which invoice/expense should be paid in"},
+		{&flagInvoiceDate, "due", "", "invoice/expense due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)"},
 	}
 
 	expenseFlags := []bcmd.Flag2Register{
 		{&flagPdfReceipt, "pdf", "", "directory to pdf document of receipt"},
-		{&flagNotes, "notes", "", "notes regarding the expense"},
-		{&flagTaxesPaid, "taxes", "", "taxes amount in the format <currency><decimal> eg. usd10.23"},
+		{&flagTaxesPaid, "taxes", "", "taxes amount in the format <decimal><currency> eg. 10.23usd"},
 	}
 
 	closeFlags := []bcmd.Flag2Register{
-		{&flagID, "id", "", "Invoice ID"},
 		{&flagTransactionID, "transaction", "", "completed transaction ID"},
-		{&flagPaymentCurTime, "cur", "", "payment amount in the format <currency><decimal> eg. usd10.23"},
+		{&flagPaymentCurTime, "cur", "", "payment amount in the format <decimal><currency> eg. 10.23usd"},
 		{&flagPaymentDate, "date", "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)"},
 	}
 
@@ -132,7 +133,7 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("new-profile command requires an argument ([name])") //never stack trace
 	}
-	name := StripHex(args[0])
+	name := args[0]
 
 	timezone, err := time.LoadLocation(flagTimezone)
 	if err != nil {
@@ -149,55 +150,153 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 	return bcmd.AppTx(InvoicerName, txBytes)
 }
 
-////invoice flags
-//flagSender      string //hex
-//flagReceiver    string //hex
-//flagDepositInfo string
-//flagAmount      string //AmtCurTime
-//flagDate        string
-//flagCur         string
+func getProfile(cmd *cobra.Command, name string) (profile Profile, err error) {
+
+	key := invoicer.ProfileKey(name)
+
+	//perform the query, get response
+	resp, err := bcmd.Query(cmd.Parent().Flag("node").Value.String(), key)
+	if err != nil {
+		return
+	}
+	if !resp.Code.IsOK() {
+		err = errors.Errorf("Query for invoice key (%v) returned non-zero code (%v): %v",
+			string(key), resp.Code, resp.Log)
+		return
+	}
+
+	return invoicer.GetProfileFromWire(resp.Value)
+}
 
 func openInvoiceCmd(cmd *cobra.Command, args []string) error {
+	return openInvoiceOrExpense(cmd, args, false)
+}
+
+func openExpenseCmd(cmd *cobra.Command, args []string) error {
+	return openInvoiceOrExpense(cmd, args, true)
+}
+
+func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) error {
+	if len(args) != 2 {
+		return fmt.Errorf("Command requires two arguments ([sender][amount])") //never stack trace
+	}
+	sender := args[0]
+	amountStr := args[1]
+
+	profile, err := getProfile(cmd, sender)
+	if err != nil {
+		return err
+	}
+
+	date, err := types.ParseDate(flagDate, flagTimezone)
+	if err != nil {
+		return err
+	}
+	amt, err := types.ParseAmtCurDate(amountStr, date)
+	if err != nil {
+		return err
+	}
+
+	var dueDate time.Time
+	if len(flagDue) > 0 {
+		dueDate, err = types.ParseDate(flagDue, flagTimezone)
+		if err != nil {
+			return err
+		}
+	} else {
+		dueDate := time.Now().AddDate(0, 0, profile.DueDurationDays)
+	}
+
+	var depositInfo string
+	if len(FlagDepositInfo) > 0 {
+		depositInfo := FlagDepositInfo
+	} else {
+		depositInfo := profile.DepositInfo
+	}
+
+	var accCur types.Currency
+	if len(FlagDepositInfo) > 0 {
+		depositInfo := FlagDepositInfo
+	} else {
+		depositInfo := profile.DepositInfo
+	}
+
+	//if not an expense then we're almost done!
+	if !isExpense {
+		txBytes := NewTxBytesOpenInvoice(
+			sender,
+			FlagReceiver,
+			depositInfo,
+			FlagNotes,
+			amt,
+			flagCur.(types.Currency),
+		)
+		return bcmd.AppTx(invoicerName, txBytes)
+	}
+
+	taxes, err := types.ParseAmtCurDate(flagTaxesPaid, date)
+	if err != nil {
+		return err
+	}
+	docBytes, err := ioutil.ReadFile(flagDocumentPath)
+	if err != nil {
+		return err
+	}
+	_, filename := path.Split(flagDocumentPath)
+	txBytes = NewTxBytesOpenExpense(
+		sender,
+		flagReceiver,
+		FlagDepositInfo,
+		amt,
+		flagCur.(types.Currency),
+		docbytes,
+		filename,
+		FlagDepositNotes,
+		taxes,
+	)
+
+	return bcmd.AppTx(invoicerName, txBytes)
+}
+
+func closeCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("invoice command requires an argument ([sender])") //never stack trace
+		return fmt.Errorf("close command requires an argument ([HexID])") //never stack trace
 	}
+	if !isHex(args[0]) {
+		return fmt.Errorf("HexID is not formatted correctly") //never stack trace
+	}
+	id := StripHex(args[0])
 
-	sender := StripHex(args[0])
+	date, err := types.ParseDate(flagDate, flagTimezone)
+	if err != nil {
+		return err
+	}
+	cur := flagCurrency.(types.Currency)
 
-	t := time.Now()
-	if len(flagTimezone) > 0 {
+	txBytes := NewTxBytesClose(
+		id,
+		flagTransactionID,
+		types.CurDate{cur, date},
+	)
+	return bcmd.AppTx(invoicerName, txBytes)
+}
 
-		tz := time.UTC
-		if len(flagTimezone) > 0 {
-			tz, err := time.LoadLocation(flagTimezone)
-			if err != nil {
-				return fmt.Errorf("error loading timezone, error: ", err) //never stack trace
-			}
+//TODO Move to tmlibs/common
+// Returns true for non-empty hex-string prefixed with "0x"
+func isHex(s string) bool {
+	if len(s) > 2 && s[:2] == "0x" {
+		_, err := hex.DecodeString(s[2:])
+		if err != nil {
+			return false
 		}
-
-		ymd := strings.Split(flagDate, "-")
-		if len(ymd) != 3 {
-			return fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
-		}
-
-		t = time.Date(ymd[0], time.Month(ymd[1]), ymd[2], 0, 0, 0, 0, tz)
-
+		return true
 	}
+	return false
+}
 
-	amt := types.AmtCurTime{
-		flagAmount.(types.Currency),
-		t,
+func StripHex(s string) string {
+	if isHex(s) {
+		return s[2:]
 	}
-
-	//txBytes := NewTxBytesOpenInvoice(
-	//ID int,
-	//sender,
-	//Receiver,
-	//DepositInfo,
-	//Amount *AmtCurTime,
-	//AcceptedCur Currency,
-	//TransactionID string,
-	//PaymentCurTime *AmtCurTime,
-	//)
-	return bcmd.AppTx(InvoicerName, txBytes)
+	return s
 }

@@ -67,34 +67,35 @@ func init() {
 
 func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 
-	//get the parent context
-	parentContext := cmd.Parent()
-
 	//get the issue, generate issue key
 	if len(args) != 1 {
 		return fmt.Errorf("query command requires an argument ([hexID])") //never stack trace
 	}
-	hexID := args[0]
-	issueKey := invoicer.InvoiceKey(issue)
+	if !isHex(args[0]) {
+		return fmt.Errorf("HexID is not formatted correctly") //never stack trace
+	}
+	id := StripHex(args[0])
+	key := invoicer.InvoiceKey(id)
 
 	//perform the query, get response
-	resp, err := bcmd.Query(parentContext.Flag("node").Value.String(), issueKey)
+	resp, err := bcmd.Query(cmd.Parent().Flag("node").Value.String(), key)
 	if err != nil {
 		return err
 	}
 	if !resp.Code.IsOK() {
-		return errors.Errorf("Query for issueKey (%v) returned non-zero code (%v): %v",
-			string(issueKey), resp.Code, resp.Log)
+		return errors.Errorf("Query for invoice key (%v) returned non-zero code (%v): %v",
+			string(key), resp.Code, resp.Log)
 	}
 
 	//get the invoicer issue object and print it
-	p2vIssue, err := invoicer.GetIssueFromWire(resp.Value)
+	invoice, err := invoicer.GetInvoiceFromWire(resp.Value)
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(wire.JSONBytes(p2vIssue)))
+	fmt.Println(string(wire.JSONBytes(invoice)))
 	return nil
 }
 
 func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
+	return nil
 }
