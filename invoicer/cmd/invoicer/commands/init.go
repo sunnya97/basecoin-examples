@@ -15,7 +15,7 @@ func init() {
 	//Change the GenesisJSON
 	bcmd.GenesisJSON = `{
   "app_hash": "",
-  "chain_id": "test_chain_id",
+  "chain_id": "invoicer_chain_id",
   "genesis_time": "0001-01-01T00:00:00.000Z",
   "validators": [
     {
@@ -33,14 +33,9 @@ func init() {
         "type": "ed25519",
         "data": "619D3678599971ED29C7529DDD4DA537B97129893598A17C82E3AC9A8BA95279"
       },
-      "coins": [
-        {
-          "denom": "issueToken",
-          "amount": 1000
-        },
-        {
-          "denom": "voteToken",
-          "amount": 1000
+      "coins": [{
+          "denom": "invoiceTok",
+          "amount": 10000000
         }
       ]
     }]

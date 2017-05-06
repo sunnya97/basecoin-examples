@@ -1,14 +1,15 @@
 package types
 
 import (
-	abci "github.com/tendermint/abci/types"
-	"github.com/tendermint/basecoin/state"
-	"github.com/tendermint/basecoin/types"
-	"github.com/tendermint/go-wire"
-	cmn "github.com/tendermint/tmlibs/common"
-	"github.com/tendermint/tmlibs/merkle"
+	"regexp"
+	"strconv"
+	"time"
 
+	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
+
+	"github.com/tendermint/go-wire"
+	"github.com/tendermint/tmlibs/merkle"
 )
 
 const (
@@ -26,18 +27,17 @@ const (
 type Currency string
 
 type CurTime struct {
-	cur  currency
+	cur  Currency
 	date time.Time
 }
 
 type AmtCurDate struct {
-	cur    curDate
-	amount decimal
+	cur    CurTime
+	amount decimal.Decimal
 }
 
 func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
 
-	var coin Coin
 	if len(amtCur) == 0 {
 		return nil, errors.New("not enought information to parse AmtCurDate")
 	}
@@ -58,17 +58,17 @@ func ParseDate(date string, timezone string) (time.Time, error) {
 
 	//get the time of invoice
 	t := time.Now()
-	if len(flagTimezone) > 0 {
+	if len(viper.GetString(FlagTimezone)) > 0 {
 
 		tz := time.UTC
-		if len(flagTimezone) > 0 {
-			tz, err := time.LoadLocation(flagTimezone)
+		if len(viper.GetString(FlagTimezone)) > 0 {
+			tz, err := time.LoadLocation(viper.GetString(FlagTimezone))
 			if err != nil {
 				return t, fmt.Errorf("error loading timezone, error: ", err) //never stack trace
 			}
 		}
 
-		ymd := strings.Split(flagDate, "-")
+		ymd := strings.Split(viper.GetString(FlagDate), "-")
 		if len(ymd) != 3 {
 			return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
 		}
@@ -84,13 +84,13 @@ func ParseDate(date string, timezone string) (time.Time, error) {
 
 type Profile struct {
 	Name               string        //identifier for querying
-	AcceptedCur        currency      //currency you will accept payment in
+	AcceptedCur        Currency      //currency you will accept payment in
 	DefaultDepositInfo string        //default deposit information (mostly for fiat)
 	DueDurationDays    int           //default duration until a sent invoice due date
 	Timezone           time.Location //default duration until a sent invoice due date
 }
 
-func NewProfile(Name string, AcceptedCur currency,
+func NewProfile(Name string, AcceptedCur Currency,
 	DefaultDepositInfo string, DueDurationDays int) Profile {
 	return Proflie{
 		Name:               Name,
@@ -100,7 +100,7 @@ func NewProfile(Name string, AcceptedCur currency,
 	}
 }
 
-func NewTxBytesNewProfile(Name string, AcceptedCur currency,
+func NewTxBytesNewProfile(Name string, AcceptedCur Currency,
 	DefaultDepositInfo string, DueDurationDays int) []byte {
 
 	data := wire.BinaryBytes(NewProfile(Address, Nickname, LegalName,
@@ -151,7 +151,7 @@ func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
 }
 
 func NewTxBytesOpenInvoice(Sender, Receiver, DepositInfo, Notes string,
-	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) []bytes {
+	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) []byte {
 
 	data := wire.BinaryBytes(NewInvoice(Sender, Receiver, DepositInfo, Notes,
 		Amount, AcceptedCur, Due))

@@ -25,28 +25,27 @@ const invoicerName = "invoicer"
 
 var (
 	//profile flags
-	flagCur                string
-	flagDefaultDepositInfo string
-	flagDueDurationDays    int
-	flagTimezone           string
+	FlagCur                string = "Cur"
+	FlagDefaultDepositInfo string = "info"
+	FlagDueDurationDays    string = "due-days"
+	FlagTimezone           string = "timezone"
 
 	//invoice flags
-	flagReceiver    string //hex
-	flagDepositInfo string
-	flagNotes       string
-	flagAmount      string //AmtCurDate
-	flagDate        string
-	flagCur         string
-	flagDue         string
+	FlagReceiver    string = "to"
+	FlagDepositInfo string = "info"
+	FlagNotes       string = "notes"
+	FlagDate        string = "date"
+	FlagCur         string = "cur"
+	FlagDue         string = "dur"
 
 	//expense flags
-	flagReceiptFile string //hex
-	flagNotes       string
-	flagTaxesPaid   string //AmtCurDate
+	FlagReceipt   string = "receipt"
+	FlagNotes     string = "notes"
+	FlagTaxesPaid string = "taxes"
 
 	//close flags
-	flagTransactionID  string //empty when unpaid
-	flagPaymentCurTime string //AmtCurDate
+	FlagTransactionID  string = "id"
+	FlagPaymentCurTime string = "cur"
 
 	//commands
 	InvoicerCmd = &cobra.Command{
@@ -84,40 +83,37 @@ func init() {
 	//register flags
 	//issueFlag2Reg := bcmd.Flag2Register{&issueFlag, "issue", "default issue", "name of the issue to generate or vote for"}
 
-	profileFlags := []bcmd.Flag2Register{
-		{&flagAcceptedCur, "cur", "btc", "currencies accepted for invoice payments"},
-		{&flagDefaultDepositInfo, "deposit-info", "", "default deposit information to be provided"},
-		{&flagDueDurationDays, "due-days", 14, "default number of days until invoice is due from invoice submission"},
-		{&flagTimezone, "timezone", "UTC", "timezone for invoice calculations"},
-	}
+	fsProfile := flag.NewFlagSet("", flag.ContinueOnError)
+	fsProfile.String(FlagTo, "", "Destination address for the bits")
+	fsProfile.String(FlagAcceptedCur, "btc", "currencies accepted for invoice payments")
+	fsProfile.String(FlagDefaultDepositInfo, "", "default deposit information to be provided")
+	fsProfile.String(FlagDueDurationDays, 14, "default number of days until invoice is due from invoice submission")
+	fsProfile.String(FlagTimezone, "UTC", "timezone for invoice calculations")
 
-	invoiceFlags := []bcmd.Flag2Register{
-		{&lagReceiver, "receiver", "allinbits", "name of the invoice/expense receiver"},
-		{&flagDepositInfo, "deposit", "", "deposit information for invoice payment (default: profile)"},
-		{&flagNotes, "notes", "", "notes regarding the expense"},
-		{&flagAmount, "amount", "", "invoice/expense amount in the format <decimal><currency> eg. 100.23usd"},
-		{&flagInvoiceDate, "date", "", "invoice/expense date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)"},
-		{&flagTimezone, "timezone", "", "invoice/expense timezone (default: profile)"},
-		{&flagCur, "cur", "btc", "currency which invoice/expense should be paid in"},
-		{&flagInvoiceDate, "due", "", "invoice/expense due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)"},
-	}
+	fsInvoice := flag.NewFlagSet("", flag.ContinueOnError)
+	fsInvoice.String(FlagReceiver, "allinbits", "name of the invoice/expense receiver")
+	fsInvoice.String(FlagDepositInfo, "", "deposit information for invoice payment (default: profile)")
+	fsInvoice.String(FlagNotes, "", "notes regarding the expense")
+	fsInvoice.String(FlagAmount, "", "invoice/expense amount in the format <decimal><currency> eg. 100.23usd")
+	fsInvoice.String(FlagInvoiceDate, "", "invoice/expense date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
+	fsInvoice.String(FlagTimezone, "", "invoice/expense timezone (default: profile)")
+	fsInvoice.String(FlagCur, "btc", "currency which invoice/expense should be paid in")
+	fsInvoice.String(FlagInvoiceDate, "", "invoice/expense due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
 
-	expenseFlags := []bcmd.Flag2Register{
-		{&flagPdfReceipt, "pdf", "", "directory to pdf document of receipt"},
-		{&flagTaxesPaid, "taxes", "", "taxes amount in the format <decimal><currency> eg. 10.23usd"},
-	}
+	fsExpense := flag.NewFlagSet("", flag.ContinueOnError)
+	fsExpense.String(FlagReceipt, "", "directory to receipt document file")
+	fsExpense.String(FlagTaxesPaid, "", "taxes amount in the format <decimal><currency> eg. 10.23usd")
 
-	closeFlags := []bcmd.Flag2Register{
-		{&flagTransactionID, "transaction", "", "completed transaction ID"},
-		{&flagPaymentCurTime, "cur", "", "payment amount in the format <decimal><currency> eg. 10.23usd"},
-		{&flagPaymentDate, "date", "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)"},
-	}
+	fsClose := flag.NewFlagSet("", flag.ContinueOnError)
+	fsClose.String(FlagTransactionID, "", "completed transaction ID")
+	fsClose.String(FlagPaymentCurTime, "", "payment amount in the format <decimal><currency> eg. 10.23usd")
+	fsClose.String(FlagPaymentDate, "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 
-	bcmd.RegisterFlags(NewProfileCmd, profileFlags)
-	bcmd.RegisterFlags(OpenInvoiceCmd, invoiceFlags)
-	bcmd.RegisterFlags(OpenExpenseCmd, invoiceFlags)
-	bcmd.RegisterFlags(OpenExpenseCmd, expenseFlags)
-	bcmd.RegisterFlags(CloseCmd, closeFlags)
+	NewProfileCmd.AddFlagSet(profileFlags)
+	OpenInvoiceCmd.AddFlagSet(invoiceFlags)
+	OpenExpenseCmd.AddFlagSet(invoiceFlags) //add invoice and expense flags here, intentional
+	OpenExpenseCmd.AddFlagSet(expenseFlags)
+	CloseCmd.AddFlagSet(closeFlags)
 
 	//register commands
 	InvoicerCmd.AddCommand(
@@ -135,16 +131,16 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 	}
 	name := args[0]
 
-	timezone, err := time.LoadLocation(flagTimezone)
+	timezone, err := time.LoadLocation(viper.GetString(flagTimezone))
 	if err != nil {
 		return fmt.Errorf("error loading timezone, error: ", err) //never stack trace
 	}
 
 	txBytes := types.NewTxBytesNewProfile(
 		name,
-		flagAcceptedCur.(types.Currency),
-		flagDefaultDepositInfo,
-		flagDueDurationDays,
+		viper.GetString(flagAcceptedCur).(types.Currency),
+		viper.GetString(flagDefaultDepositInfo),
+		viper.GetString(flagDueDurationDays),
 		timezone,
 	)
 	return bcmd.AppTx(InvoicerName, txBytes)
@@ -188,7 +184,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 		return err
 	}
 
-	date, err := types.ParseDate(flagDate, flagTimezone)
+	date, err := types.ParseDate(viper.GetString(flagDate), viper.GetString(flagTimezone))
 	if err != nil {
 		return err
 	}
@@ -198,8 +194,8 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	}
 
 	var dueDate time.Time
-	if len(flagDue) > 0 {
-		dueDate, err = types.ParseDate(flagDue, flagTimezone)
+	if len(viper.GetString(flagDue)) > 0 {
+		dueDate, err = types.ParseDate(viper.GetString(flagDue), viper.GetString(flagTimezone))
 		if err != nil {
 			return err
 		}
@@ -229,26 +225,26 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 			depositInfo,
 			FlagNotes,
 			amt,
-			flagCur.(types.Currency),
+			viper.GetString(flagCur).(types.Currency),
 		)
 		return bcmd.AppTx(invoicerName, txBytes)
 	}
 
-	taxes, err := types.ParseAmtCurDate(flagTaxesPaid, date)
+	taxes, err := types.ParseAmtCurDate(viper.GetString(flagTaxesPaid), date)
 	if err != nil {
 		return err
 	}
-	docBytes, err := ioutil.ReadFile(flagDocumentPath)
+	docBytes, err := ioutil.ReadFile(viper.GetString(flagDocumentPath))
 	if err != nil {
 		return err
 	}
-	_, filename := path.Split(flagDocumentPath)
+	_, filename := path.Split(viper.GetString(flagDocumentPath))
 	txBytes = NewTxBytesOpenExpense(
 		sender,
-		flagReceiver,
+		viper.GetString(flagReceiver),
 		FlagDepositInfo,
 		amt,
-		flagCur.(types.Currency),
+		viper.GetString(flagCur).(types.Currency),
 		docbytes,
 		filename,
 		FlagDepositNotes,
@@ -267,15 +263,15 @@ func closeCmd(cmd *cobra.Command, args []string) error {
 	}
 	id := StripHex(args[0])
 
-	date, err := types.ParseDate(flagDate, flagTimezone)
+	date, err := types.ParseDate(viper.GetString(flagDate), viper.GetString(flagTimezone))
 	if err != nil {
 		return err
 	}
-	cur := flagCurrency.(types.Currency)
+	cur := viper.GetString(flagCurrency).(types.Currency)
 
 	txBytes := NewTxBytesClose(
 		id,
-		flagTransactionID,
+		viper.GetString(flagTransactionID),
 		types.CurDate{cur, date},
 	)
 	return bcmd.AppTx(invoicerName, txBytes)

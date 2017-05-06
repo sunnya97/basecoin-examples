@@ -5,6 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	flag "github.com/spf13/pflag"
 
 	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
@@ -14,13 +15,13 @@ import (
 
 var (
 	//flags
-	num         int
-	short       bool
-	typeflag    string
-	from        string //list of addresses by commas
-	to          string //list of addresses by commas
-	date        string // with colon start:end, :start, or end:
-	downloadExp string //path to download expenses
+	FlagNum         string = "num"
+	FlagShort       string = "short"
+	FlagTypeflag    string = "typeflag"
+	FlagFrom        string = "from"
+	FlagTo          string = "to"
+	FlagDate        string = "date"
+	FlagDownloadExp string = "download-expense"
 
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
@@ -38,27 +39,22 @@ var (
 
 func init() {
 	//register flags
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fs.Bool(downloadExp, false, "download expenses pdfs to the relative path specified")
 
-	downloadExpFlag := bcmd.Flag2Register{&download, "download-expenses", false, "download expenses pdfs to the relative path specified"}
+	QueryInvoiceCmd.AddFlagSet(fs)
 
-	invoiceFlags := []bcmd.Flag2Register{
-		downloadExpFlag,
-	}
+	fs.String(FlagTo, "", "Destination address for the bits")
+	fs.Int(FlagNum, 0, "number of results to display, use 0 for no limit")
+	fs.Bool(FlagShort, false, "output fields: paid, amount, date, sender, receiver")
+	fs.String(FlagType, "",
+		"limit the scope by using any of the following modifiers with commas: invoice,expense,paid,unpaid")
+	fs.String(FlagDate, "",
+		"Query within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
+	fs.String(FlagFrom, "", "only query for invoices from these addresses in the format <ADDR1>,<ADDR2>, etc.")
+	fs.String(FlagTo, "", "only query for invoices to these addresses in the format <ADDR1>,<ADDR2>, etc.")
 
-	invoicesFlags := []bcmd.Flag2Register{
-		{&num, "n", 0, "number of results to display, use 0 for no limit"},
-		{&short, "short", false, "output fields: paid, amount, date, sender, receiver"},
-		{&typeflg, "type", "",
-			"limit the scope by using any of the following modifiers with commas: invoice,expense,paid,unpaid"},
-		{&date, "date", "",
-			"Query within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:"},
-		{&from, "from", "", "only query for invoices from these addresses in the format <ADDR1>,<ADDR2>, etc."},
-		{&to, "to", "", "only query for invoices to these addresses in the format <ADDR1>,<ADDR2>, etc."},
-		downloadExpFlag,
-	}
-
-	bcmd.RegisterFlags(QueryInvoiceCmd, invoiceFlags)
-	bcmd.RegisterFlags(QueryInvoicesCmd, invoicesFlags)
+	QueryInvoicesCmd.AddFlagSet(fs)
 
 	//register commands
 	bcmd.RegisterQuerySubcommand(QueryInvoicesCmd)
@@ -78,7 +74,7 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 	key := invoicer.InvoiceKey(id)
 
 	//perform the query, get response
-	resp, err := bcmd.Query(cmd.Parent().Flag("node").Value.String(), key)
+	resp, err := bcmd.Query(cmd.Parent().Flag("node").Value.String(), key) //TODO Upgrade to viper once basecoin viper upgrade complete
 	if err != nil {
 		return err
 	}
