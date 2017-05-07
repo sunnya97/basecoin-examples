@@ -14,15 +14,6 @@ import (
 )
 
 var (
-	//flags
-	FlagNum         string = "num"
-	FlagShort       string = "short"
-	FlagTypeflag    string = "typeflag"
-	FlagFrom        string = "from"
-	FlagTo          string = "to"
-	FlagDate        string = "date"
-	FlagDownloadExp string = "download-expense"
-
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
 		Use:   "invoice [hexID]",

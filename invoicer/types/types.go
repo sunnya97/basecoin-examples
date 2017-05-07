@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -24,10 +26,8 @@ const (
 
 //////////////////////////////
 
-type Currency string
-
 type CurTime struct {
-	cur  Currency
+	cur  string
 	date time.Time
 }
 
@@ -43,7 +43,7 @@ func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
 	}
 
 	var reAmt = regexp.MustCompile("(\\d+)")
-	amt, err := strconv.Atoi(reAmt.FindString(amtCur))
+	amt, err := decimal.NewFromString(reAmt.FindString(amtCur))
 	if err != nil {
 		return nil, err
 	}
@@ -54,21 +54,29 @@ func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
 	return &AmtCurDate{CurTime{cur, date}, amt}, nil
 }
 
-func ParseDate(date string, timezone string) (time.Time, error) {
+func ParseDate(date string, timezone string) (t time.Time, err error) {
 
 	//get the time of invoice
-	t := time.Now()
-	if len(viper.GetString(FlagTimezone)) > 0 {
+	t = time.Now()
+	if len(timezone) > 0 {
 
 		tz := time.UTC
-		if len(viper.GetString(FlagTimezone)) > 0 {
-			tz, err := time.LoadLocation(viper.GetString(FlagTimezone))
+		if len(timezone) > 0 {
+			tz, err = time.LoadLocation(timezone)
 			if err != nil {
 				return t, fmt.Errorf("error loading timezone, error: ", err) //never stack trace
 			}
 		}
 
-		ymd := strings.Split(viper.GetString(FlagDate), "-")
+		str := strings.Split(date, "-")
+		var ymd = []int{}
+		for _, i := range str {
+			j, err := strconv.Atoi(i)
+			if err != nil {
+				return t, err
+			}
+			ymd = append(ymd, j)
+		}
 		if len(ymd) != 3 {
 			return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
 		}
@@ -83,28 +91,28 @@ func ParseDate(date string, timezone string) (time.Time, error) {
 ///////////////////////////////
 
 type Profile struct {
-	Name               string        //identifier for querying
-	AcceptedCur        Currency      //currency you will accept payment in
-	DefaultDepositInfo string        //default deposit information (mostly for fiat)
-	DueDurationDays    int           //default duration until a sent invoice due date
-	Timezone           time.Location //default duration until a sent invoice due date
+	Name            string        //identifier for querying
+	AcceptedCur     string        //currency you will accept payment in
+	DepositInfo     string        //default deposit information (mostly for fiat)
+	DueDurationDays int           //default duration until a sent invoice due date
+	Timezone        time.Location //default duration until a sent invoice due date
 }
 
-func NewProfile(Name string, AcceptedCur Currency,
-	DefaultDepositInfo string, DueDurationDays int) Profile {
-	return Proflie{
-		Name:               Name,
-		AcceptedCur:        AcceptedCur,
-		DefaultDepositInfo: DefaultDepositInfo,
-		DueDurationDays:    DueDurationDays,
+func NewProfile(Name string, AcceptedCur string,
+	DepositInfo string, DueDurationDays int) Profile {
+	return Profile{
+		Name:            Name,
+		AcceptedCur:     AcceptedCur,
+		DepositInfo:     DepositInfo,
+		DueDurationDays: DueDurationDays,
 	}
 }
 
-func NewTxBytesNewProfile(Name string, AcceptedCur Currency,
-	DefaultDepositInfo string, DueDurationDays int) []byte {
+func NewTxBytesNewProfile(Name string, AcceptedCur string,
+	DepositInfo string, DueDurationDays int) []byte {
 
-	data := wire.BinaryBytes(NewProfile(Address, Nickname, LegalName,
-		AcceptedCur, DefaultDepositInfo, DueDurationDays))
+	data := wire.BinaryBytes(NewProfile(Name, AcceptedCur,
+		DepositInfo, DueDurationDays))
 	data = append([]byte{TBTxNewProfile}, data...)
 	return data
 }
@@ -123,19 +131,20 @@ type Context struct {
 	DepositInfo string
 	Notes       string
 	Amount      *AmtCurDate
-	AcceptedCur Currency
+	AcceptedCur string
 	Due         time.Time
 }
 
 func (i Invoice) SetID() {
-	hashBytes := merkle.SimpleHashFromBinary(i.Context)
+	hashBytes := merkle.SimpleHashFromBinary(i.Ctx)
 	i.ID = append([]byte{TBIDInvoice}, hashBytes...)
 }
 
 func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
-	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) Invoice {
+	Amount *AmtCurDate, AcceptedCur string, Due time.Time) Invoice {
+
 	return Invoice{
-		Context{
+		Ctx: Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
@@ -151,7 +160,7 @@ func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
 }
 
 func NewTxBytesOpenInvoice(Sender, Receiver, DepositInfo, Notes string,
-	Amount AmtCurDate, AcceptedCur Currency, Due time.Time) []byte {
+	Amount *AmtCurDate, AcceptedCur string, Due time.Time) []byte {
 
 	data := wire.BinaryBytes(NewInvoice(Sender, Receiver, DepositInfo, Notes,
 		Amount, AcceptedCur, Due))
@@ -164,22 +173,22 @@ type Expense struct {
 	ID             []byte
 	Document       []byte
 	DocFileName    string
-	ExpenseTaxes   AmtCurDate
+	ExpenseTaxes   *AmtCurDate
 	TransactionID  string      //empty when unpaid
 	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
 }
 
 func (e *Expense) SetID() {
-	hashBytes := merkle.SimpleHashFromBinary(e.Context)
+	hashBytes := merkle.SimpleHashFromBinary(e.Ctx)
 	e.ID = append([]byte{TBIDExpense}, hashBytes...)
 }
 
 func NewExpense(Sender, Receiver, DepositInfo, Notes string,
-	Amount AmtCurDate, AcceptedCur Currency, Due time.Time,
-	Document []byte, DocFilename, ExpenseTaxes *AmtCurDate) Expense {
+	Amount *AmtCurDate, AcceptedCur string, Due time.Time,
+	Document []byte, DocFileName string, ExpenseTaxes *AmtCurDate) Expense {
 
 	return Expense{
-		Context{
+		Ctx: Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
@@ -198,11 +207,11 @@ func NewExpense(Sender, Receiver, DepositInfo, Notes string,
 }
 
 func NewTxBytesOpenExpense(Sender, Receiver, DepositInfo, Notes string,
-	Amount AmtCurDate, AcceptedCur Currency, Due time.Time,
-	Document []byte, DocFilename, TaxesPaid *AmtCurDate) []byte {
+	Amount *AmtCurDate, AcceptedCur string, Due time.Time,
+	Document []byte, DocFileName string, TaxesPaid *AmtCurDate) []byte {
 
 	data := wire.BinaryBytes(NewExpense(Sender, Receiver, DepositInfo, Notes,
-		Amount, AcceptedCur, Due, Document, DocFilename, TaxesPaid))
+		Amount, AcceptedCur, Due, Document, DocFileName, TaxesPaid))
 
 	data = append([]byte{TBTxOpenExpense}, data...)
 	return data

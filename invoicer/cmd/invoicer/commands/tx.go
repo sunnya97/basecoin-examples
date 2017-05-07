@@ -24,29 +24,6 @@ import (
 const invoicerName = "invoicer"
 
 var (
-	//profile flags
-	FlagCur                string = "Cur"
-	FlagDefaultDepositInfo string = "info"
-	FlagDueDurationDays    string = "due-days"
-	FlagTimezone           string = "timezone"
-
-	//invoice flags
-	FlagReceiver    string = "to"
-	FlagDepositInfo string = "info"
-	FlagNotes       string = "notes"
-	FlagDate        string = "date"
-	FlagCur         string = "cur"
-	FlagDue         string = "dur"
-
-	//expense flags
-	FlagReceipt   string = "receipt"
-	FlagNotes     string = "notes"
-	FlagTaxesPaid string = "taxes"
-
-	//close flags
-	FlagTransactionID  string = "id"
-	FlagPaymentCurTime string = "cur"
-
 	//commands
 	InvoicerCmd = &cobra.Command{
 		Use:   "invoicer",
@@ -86,19 +63,18 @@ func init() {
 	fsProfile := flag.NewFlagSet("", flag.ContinueOnError)
 	fsProfile.String(FlagTo, "", "Destination address for the bits")
 	fsProfile.String(FlagAcceptedCur, "btc", "currencies accepted for invoice payments")
-	fsProfile.String(FlagDefaultDepositInfo, "", "default deposit information to be provided")
+	fsProfile.String(FlagDepositInfo, "", "default deposit information to be provided")
 	fsProfile.String(FlagDueDurationDays, 14, "default number of days until invoice is due from invoice submission")
 	fsProfile.String(FlagTimezone, "UTC", "timezone for invoice calculations")
 
 	fsInvoice := flag.NewFlagSet("", flag.ContinueOnError)
-	fsInvoice.String(FlagReceiver, "allinbits", "name of the invoice/expense receiver")
+	fsInvoice.String(FlagTo, "allinbits", "name of the invoice/expense receiver")
 	fsInvoice.String(FlagDepositInfo, "", "deposit information for invoice payment (default: profile)")
 	fsInvoice.String(FlagNotes, "", "notes regarding the expense")
 	fsInvoice.String(FlagAmount, "", "invoice/expense amount in the format <decimal><currency> eg. 100.23usd")
-	fsInvoice.String(FlagInvoiceDate, "", "invoice/expense date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 	fsInvoice.String(FlagTimezone, "", "invoice/expense timezone (default: profile)")
 	fsInvoice.String(FlagCur, "btc", "currency which invoice/expense should be paid in")
-	fsInvoice.String(FlagInvoiceDate, "", "invoice/expense due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
+	fsInvoice.String(FlagDueDate, "", "invoice/expense due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
 
 	fsExpense := flag.NewFlagSet("", flag.ContinueOnError)
 	fsExpense.String(FlagReceipt, "", "directory to receipt document file")
@@ -106,7 +82,7 @@ func init() {
 
 	fsClose := flag.NewFlagSet("", flag.ContinueOnError)
 	fsClose.String(FlagTransactionID, "", "completed transaction ID")
-	fsClose.String(FlagPaymentCurTime, "", "payment amount in the format <decimal><currency> eg. 10.23usd")
+	fsClose.String(FlagCur, "", "payment amount in the format <decimal><currency> eg. 10.23usd")
 	fsClose.String(FlagPaymentDate, "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 
 	NewProfileCmd.AddFlagSet(profileFlags)
@@ -194,8 +170,8 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	}
 
 	var dueDate time.Time
-	if len(viper.GetString(flagDue)) > 0 {
-		dueDate, err = types.ParseDate(viper.GetString(flagDue), viper.GetString(flagTimezone))
+	if len(viper.GetString(FlagDueDate)) > 0 {
+		dueDate, err = types.ParseDate(viper.GetString(FlagDueDate), viper.GetString(flagTimezone))
 		if err != nil {
 			return err
 		}
@@ -221,7 +197,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	if !isExpense {
 		txBytes := NewTxBytesOpenInvoice(
 			sender,
-			FlagReceiver,
+			FlagTo,
 			depositInfo,
 			FlagNotes,
 			amt,
@@ -267,7 +243,7 @@ func closeCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	cur := viper.GetString(flagCurrency).(types.Currency)
+	cur := viper.GetString(FlagCur).(types.Currency)
 
 	txBytes := NewTxBytesClose(
 		id,
