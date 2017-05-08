@@ -15,31 +15,36 @@ import (
 )
 
 const (
-	TBIDExpense byte = 0x01
-	TBIDInvoice byte = 0x02
+	TBIDExpense = iota
+	TBIDInvoice
 
-	TBTxNewProfile  byte = 0x01
-	TBTxOpenInvoice byte = 0x02
-	TBTxOpenExpense byte = 0x03
-	TBTxClose       byte = 0x04
+	TBTxNewProfile
+	TBTxEditProfile
+	TBTxCloseProfile
+	TBTxOpenInvoice
+	TBTxEditInvoice
+	TBTxOpenExpense
+	TBTxEditExpense
+	TBTxClose
+	TBTxBulkImport
 )
 
 //////////////////////////////
 
 type CurTime struct {
-	cur  string
-	date time.Time
+	Cur  string
+	Date time.Time
 }
 
-type AmtCurDate struct {
-	cur    CurTime
-	amount decimal.Decimal
+type AmtCurTime struct {
+	Cur    CurTime
+	Amount decimal.Decimal
 }
 
-func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
+func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 
 	if len(amtCur) == 0 {
-		return nil, errors.New("not enought information to parse AmtCurDate")
+		return nil, errors.New("not enought information to parse AmtCurTime")
 	}
 
 	var reAmt = regexp.MustCompile("(\\d+)")
@@ -51,7 +56,7 @@ func ParseAmtCurDate(amtCur string, date time.Time) (*AmtCurDate, error) {
 	var reCur = regexp.MustCompile("([^\\d\\W]+)")
 	cur := reCur.FindString(amtCur)
 
-	return &AmtCurDate{CurTime{cur, date}, amt}, nil
+	return &AmtCurTime{CurTime{cur, date}, amt}, nil
 }
 
 func ParseDate(date string, timezone string) (t time.Time, err error) {
@@ -98,21 +103,22 @@ type Profile struct {
 	Timezone        time.Location //default duration until a sent invoice due date
 }
 
-func NewProfile(Name string, AcceptedCur string,
-	DepositInfo string, DueDurationDays int) Profile {
+func NewProfile(Name string, AcceptedCur string, DepositInfo string,
+	DueDurationDays int, Timezone time.Location) Profile {
 	return Profile{
 		Name:            Name,
 		AcceptedCur:     AcceptedCur,
 		DepositInfo:     DepositInfo,
 		DueDurationDays: DueDurationDays,
+		Timezone:        Timezone,
 	}
 }
 
-func NewTxBytesNewProfile(Name string, AcceptedCur string,
-	DepositInfo string, DueDurationDays int) []byte {
+func NewTxBytesNewProfile(Name string, AcceptedCur string, DepositInfo string,
+	DueDurationDays int, Timezone time.Location) []byte {
 
 	data := wire.BinaryBytes(NewProfile(Name, AcceptedCur,
-		DepositInfo, DueDurationDays))
+		DepositInfo, DueDurationDays, Timezone))
 	data = append([]byte{TBTxNewProfile}, data...)
 	return data
 }
@@ -121,7 +127,7 @@ type Invoice struct {
 	Ctx            Context
 	ID             []byte
 	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
+	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
 //struct used for hash to determine ID
@@ -130,7 +136,7 @@ type Context struct {
 	Receiver    string
 	DepositInfo string
 	Notes       string
-	Amount      *AmtCurDate
+	Amount      *AmtCurTime
 	AcceptedCur string
 	Due         time.Time
 }
@@ -141,7 +147,7 @@ func (i Invoice) SetID() {
 }
 
 func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurDate, AcceptedCur string, Due time.Time) Invoice {
+	Amount *AmtCurTime, AcceptedCur string, Due time.Time) Invoice {
 
 	return Invoice{
 		Ctx: Context{
@@ -160,7 +166,7 @@ func NewInvoice(Sender, Receiver, DepositInfo, Notes string,
 }
 
 func NewTxBytesOpenInvoice(Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurDate, AcceptedCur string, Due time.Time) []byte {
+	Amount *AmtCurTime, AcceptedCur string, Due time.Time) []byte {
 
 	data := wire.BinaryBytes(NewInvoice(Sender, Receiver, DepositInfo, Notes,
 		Amount, AcceptedCur, Due))
@@ -173,9 +179,9 @@ type Expense struct {
 	ID             []byte
 	Document       []byte
 	DocFileName    string
-	ExpenseTaxes   *AmtCurDate
+	ExpenseTaxes   *AmtCurTime
 	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
+	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
 func (e *Expense) SetID() {
@@ -184,8 +190,8 @@ func (e *Expense) SetID() {
 }
 
 func NewExpense(Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurDate, AcceptedCur string, Due time.Time,
-	Document []byte, DocFileName string, ExpenseTaxes *AmtCurDate) Expense {
+	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
+	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) Expense {
 
 	return Expense{
 		Ctx: Context{
@@ -207,8 +213,8 @@ func NewExpense(Sender, Receiver, DepositInfo, Notes string,
 }
 
 func NewTxBytesOpenExpense(Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurDate, AcceptedCur string, Due time.Time,
-	Document []byte, DocFileName string, TaxesPaid *AmtCurDate) []byte {
+	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
+	Document []byte, DocFileName string, TaxesPaid *AmtCurTime) []byte {
 
 	data := wire.BinaryBytes(NewExpense(Sender, Receiver, DepositInfo, Notes,
 		Amount, AcceptedCur, Due, Document, DocFileName, TaxesPaid))
@@ -220,10 +226,10 @@ func NewTxBytesOpenExpense(Sender, Receiver, DepositInfo, Notes string,
 type Close struct {
 	ID             []byte
 	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurDate //currency used to pay invoice, empty when unpaid
+	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurDate) Close {
+func NewClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime) Close {
 	return Close{
 		ID:             ID,
 		TransactionID:  TransactionID,
@@ -232,7 +238,7 @@ func NewClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurDate) Close
 
 }
 
-func NewTxBytesClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurDate) []byte {
+func NewTxBytesClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime) []byte {
 	data := wire.BinaryBytes(NewClose(ID, TransactionID, PaymentCurTime))
 	data = append([]byte{TBTxClose}, data...)
 	return data

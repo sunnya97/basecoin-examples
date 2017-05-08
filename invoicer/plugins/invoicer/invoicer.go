@@ -7,12 +7,11 @@ import (
 	"github.com/tendermint/basecoin/state"
 	btypes "github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
-	cmn "github.com/tendermint/tmlibs/common"
 
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
-const invoicerName = "invoicer"
+const InvoicerName = "invoicer"
 
 type Invoicer struct {
 	name string
@@ -20,67 +19,9 @@ type Invoicer struct {
 
 func New() *Invoicer {
 	return &Invoicer{
-		name: invoicerName,
+		name: InvoicerName,
 	}
 }
-
-///////////////////////////////////////////////////
-
-func ProfileKey(name string) []byte {
-	return []byte(cmn.Fmt("%v,Profile=%v", invoicerName, name))
-}
-
-func InvoicerKey(ID []byte) []byte {
-	return []byte(cmn.Fmt("%v,ID=%x", invoicerName, ID))
-}
-
-//get an Invoice from store bytes
-func GetProfileFromWire(profileBytes []byte) (profile types.Profile, err error) {
-	out, err := getFromWire(profileBytes, profile)
-	return out.(types.Profile), err
-}
-
-func GetInvoiceFromWire(invoiceBytes []byte) (invoice types.Invoice, err error) {
-	out, err := getFromWire(invoiceBytes, invoice)
-	return out.(types.Invoice), err
-}
-
-func GetExpenseFromWire(expenseBytes []byte) (expense types.Expense, err error) {
-	out, err := getFromWire(expenseBytes, expense)
-	return out.(types.Expense), err
-}
-
-func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
-	var err error
-
-	//Determine if the issue already exists and load
-	if len(bytes) > 0 { //is there a record of the issue existing?
-		err = wire.ReadBinaryBytes(bytes, &destination)
-		if err != nil {
-			err = abci.ErrInternalError.AppendLog("Error decoding state: " + err.Error())
-		}
-	} else {
-		err = abci.ErrInternalError.AppendLog("state not found")
-	}
-	return destination, err
-}
-
-func getProfile(store btypes.KVStore, name string) (profile types.Profile, err error) {
-	bytes := store.Get(ProfileKey(name))
-	return GetProfileFromWire(bytes)
-}
-
-func getInvoice(store btypes.KVStore, ID []byte) (invoice types.Invoice, err error) {
-	bytes := store.Get(InvoicerKey(ID))
-	return GetInvoiceFromWire(bytes)
-}
-
-func getExpense(store btypes.KVStore, ID []byte) (expense types.Expense, err error) {
-	bytes := store.Get(InvoicerKey(ID))
-	return GetExpenseFromWire(bytes)
-}
-
-///////////////////////////////////////////////////
 
 func (inv *Invoicer) Name() string {
 	return inv.name
@@ -107,16 +48,25 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 	}
 
 	//Note that the zero position of txBytes contains the type-byte for the tx type
-	//TODO add options for editing existing profile
 	switch txBytes[0] {
 	case types.TBTxNewProfile:
 		return inv.runTxNewProfile(store, ctx, txBytes[1:])
+	case types.TBTxEditProfile:
+		return inv.runTxEditProfile(store, ctx, txBytes[1:])
+	case types.TBTxCloseProfile:
+		return inv.runTxCloseProfile(store, ctx, txBytes[1:])
 	case types.TBTxOpenInvoice:
 		return inv.runTxOpenInvoice(store, ctx, txBytes[1:])
+	case types.TBTxEditInvoice:
+		return inv.runTxEditInvoice(store, ctx, txBytes[1:])
 	case types.TBTxOpenExpense:
 		return inv.runTxOpenExpense(store, ctx, txBytes[1:])
+	case types.TBTxEditExpense:
+		return inv.runTxEditExpense(store, ctx, txBytes[1:])
 	case types.TBTxClose:
 		return inv.runTxClose(store, ctx, txBytes[1:])
+	case types.TBTxBulkImport:
+		return inv.runTxBulkImport(store, ctx, txBytes[1:])
 	default:
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: bad prepended bytes")
 	}
@@ -141,14 +91,29 @@ func (inv *Invoicer) runTxNewProfile(store btypes.KVStore, ctx btypes.CallContex
 		return abci.ErrInternalError.AppendLog("new profile due duration must be non-negative")
 	}
 
-	//Return if the issue already exists, aka no error was thrown
-	if _, err := getProfile(store, profile.Name); err == nil {
-		return abci.ErrInternalError.AppendLog("Cannot create an already existing Profile")
+	//Check if profile is active
+	profiles, err := getListProfiles(store)
+	for _, p := range profiles { //TODO opp for optimization through use of tree structure instread of this loop
+		if p == profile.Name {
+			return abci.ErrInternalError.AppendLog("Cannot create an already existing Profile")
+		}
 	}
 
 	//Store profile
 	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(profile))
+
+	//also add it to the list of open profiles
+	profiles := append(profiles, profile.Name)
+	store.Set(ListProfilesKey(), wire.BinaryBytes(profiles))
 	return abci.OK
+}
+
+func (inv *Invoicer) runTxEditProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+	return abci.OK //TODO add functionality
+}
+
+func (inv *Invoicer) runTxCloseProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+	return abci.OK //TODO add functionality
 }
 
 func (inv *Invoicer) runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
@@ -179,7 +144,6 @@ func (inv *Invoicer) runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallConte
 	if _, err := getProfile(store, invoice.Ctx.Sender); err != nil {
 		return abci.ErrInternalError.AppendLog("Senders Profile doesn't exist")
 	}
-
 	if _, err := getProfile(store, invoice.Ctx.Receiver); err != nil {
 		return abci.ErrInternalError.AppendLog("Receiver profile doesn't exist")
 	}
@@ -194,6 +158,10 @@ func (inv *Invoicer) runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallConte
 	return abci.OK
 }
 
+func (inv *Invoicer) runTxEditInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+	return abci.OK //TODO add functionality
+}
+
 func (inv *Invoicer) runTxOpenExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
@@ -206,15 +174,15 @@ func (inv *Invoicer) runTxOpenExpense(store btypes.KVStore, ctx btypes.CallConte
 	//Validate Tx
 	switch {
 	case len(expense.Ctx.Sender) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have a sender")
+		return abci.ErrInternalError.AppendLog("expense must have a sender")
 	case len(expense.Ctx.Receiver) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
+		return abci.ErrInternalError.AppendLog("expense must have a receiver")
 	case len(expense.Ctx.AcceptedCur) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
+		return abci.ErrInternalError.AppendLog("expense must have an accepted currency")
 	case expense.Ctx.Amount == nil:
-		return abci.ErrInternalError.AppendLog("invoice amount is nil")
+		return abci.ErrInternalError.AppendLog("expense amount is nil")
 	case expense.Ctx.Due.Before(time.Now()):
-		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
+		return abci.ErrInternalError.AppendLog("cannot issue overdue expense")
 	}
 
 	(&expense).SetID()
@@ -235,6 +203,10 @@ func (inv *Invoicer) runTxOpenExpense(store btypes.KVStore, ctx btypes.CallConte
 	//Store profile
 	store.Set(InvoicerKey(expense.ID), wire.BinaryBytes(expense))
 	return abci.OK
+}
+
+func (inv *Invoicer) runTxEditExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+	return abci.OK //TODO add functionality
 }
 
 func (inv *Invoicer) runTxClose(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
@@ -273,6 +245,11 @@ func (inv *Invoicer) runTxClose(store btypes.KVStore, ctx btypes.CallContext, tx
 	}
 
 	return abci.OK
+}
+
+//TODO add JSON imports
+func (inv *Invoicer) runTxBulkImport(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+	return abci.OK //TODO add functionality
 }
 
 func (inv *Invoicer) InitChain(store btypes.KVStore, vals []*abci.Validator) {

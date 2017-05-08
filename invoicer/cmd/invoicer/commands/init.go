@@ -1,13 +1,15 @@
 package commands
 
 import (
+	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
+	btypes "github.com/tendermint/basecoin/types"
 )
 
 func init() {
 
 	//Register invoicer with basecoin
-	bcmd.RegisterStartPlugin(InvoicerName, func() types.Plugin { return invoicer.New() })
+	bcmd.RegisterStartPlugin(InvoicerName, func() btypes.Plugin { return invoicer.New() })
 
 	//Change the working directory
 	bcmd.DefaultHome = ".invoicer"
