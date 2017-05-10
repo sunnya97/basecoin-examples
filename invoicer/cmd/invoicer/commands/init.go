@@ -9,10 +9,10 @@ import (
 func init() {
 
 	//Register invoicer with basecoin
-	bcmd.RegisterStartPlugin(InvoicerName, func() btypes.Plugin { return invoicer.New() })
+	bcmd.RegisterStartPlugin(invoicer.Name, func() btypes.Plugin { return invoicer.New() })
 
 	//Change the working directory
-	bcmd.DefaultHome = ".invoicer"
+	bcmd.DefaultHome = "." + invoicer.Name
 
 	//Change the GenesisJSON
 	bcmd.GenesisJSON = `{

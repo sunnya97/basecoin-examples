@@ -10,23 +10,19 @@ import (
 )
 
 func ProfileKey(name string) []byte {
-	return []byte(cmn.Fmt("%v,Profile=%v", InvoicerName, name))
+	return []byte(cmn.Fmt("%v,Profile=%v", Name, name))
 }
 
-func InvoicerKey(ID []byte) []byte {
-	return []byte(cmn.Fmt("%v,ID=%x", InvoicerName, ID))
+func InvoiceKey(ID []byte) []byte {
+	return []byte(cmn.Fmt("%v,ID=%x", Name, ID))
 }
 
-func ListProfilesKey() []byte {
-	return []byte(cmn.Fmt("%v,Profiles", InvoicerName))
+func ListProfileKey() []byte {
+	return []byte(cmn.Fmt("%v,Profiles", Name))
 }
 
-func ListInvoicesKey() []byte {
-	return []byte(cmn.Fmt("%v,Invoices", InvoicerName))
-}
-
-func ListExpensesKey() []byte {
-	return []byte(cmn.Fmt("%v,Expenses", InvoicerName))
+func ListInvoiceKey() []byte {
+	return []byte(cmn.Fmt("%v,Invoices", Name))
 }
 
 //Get objects from query bytes
@@ -46,19 +42,14 @@ func GetExpenseFromWire(bytes []byte) (expense types.Expense, err error) {
 	return out.(types.Expense), err
 }
 
-func GetListProfilesFromWire(bytes []byte) (profiles []types.Profile, err error) {
+func GetListProfileFromWire(bytes []byte) (profiles []string, err error) {
 	out, err := getFromWire(bytes, profiles)
-	return out.([]types.Profile), err
+	return out.([]string), err
 }
 
-func GetListInvoicesFromWire(bytes []byte) (invoices []types.Invoice, err error) {
+func GetListInvoiceFromWire(bytes []byte) (invoices [][]byte, err error) {
 	out, err := getFromWire(bytes, invoices)
-	return out.([]types.Invoice), err
-}
-
-func GetListExpensesFromWire(bytes []byte) (expenses []types.Expense, err error) {
-	out, err := getFromWire(bytes, expenses)
-	return out.([]types.Expense), err
+	return out.([][]byte), err
 }
 
 func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
@@ -84,16 +75,21 @@ func getProfile(store btypes.KVStore, name string) (profile types.Profile, err e
 }
 
 func getInvoice(store btypes.KVStore, ID []byte) (invoice types.Invoice, err error) {
-	bytes := store.Get(InvoicerKey(ID))
+	bytes := store.Get(InvoiceKey(ID))
 	return GetInvoiceFromWire(bytes)
 }
 
 func getExpense(store btypes.KVStore, ID []byte) (expense types.Expense, err error) {
-	bytes := store.Get(InvoicerKey(ID))
+	bytes := store.Get(InvoiceKey(ID))
 	return GetExpenseFromWire(bytes)
 }
 
-func getListProfiles(store btypes.KVStore) (profiles []types.Profile, err error) {
-	bytes := store.Get(ListProfilesKey())
-	return GetListProfilesFromWire(bytes)
+func getListProfile(store btypes.KVStore) (profiles []string, err error) {
+	bytes := store.Get(ListProfileKey())
+	return GetListProfileFromWire(bytes)
+}
+
+func getListInvoice(store btypes.KVStore) (profiles [][]byte, err error) {
+	bytes := store.Get(ListProfileKey())
+	return GetListInvoiceFromWire(bytes)
 }

@@ -7,7 +7,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -17,12 +16,10 @@ import (
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 )
 
-const InvoicerName = "invoicer"
-
 var (
 	//commands
 	InvoicerCmd = &cobra.Command{
-		Use:   "invoicer",
+		Use:   invoicer.Name,
 		Short: "commands relating to invoicer system",
 	}
 
@@ -112,25 +109,7 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 		viper.GetInt(FlagDueDurationDays),
 		*timezone,
 	)
-	return bcmd.AppTx(InvoicerName, txBytes)
-}
-
-func getProfile(cmd *cobra.Command, name string) (profile types.Profile, err error) {
-
-	key := invoicer.ProfileKey(name)
-
-	//perform the query, get response
-	resp, err := bcmd.Query(cmd.Parent().Flag("node").Value.String(), key)
-	if err != nil {
-		return
-	}
-	if !resp.Code.IsOK() {
-		err = errors.Errorf("Query for invoice key (%v) returned non-zero code (%v): %v",
-			string(key), resp.Code, resp.Log)
-		return
-	}
-
-	return invoicer.GetProfileFromWire(resp.Value)
+	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
 func openInvoiceCmd(cmd *cobra.Command, args []string) error {
@@ -148,7 +127,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	sender := args[0]
 	amountStr := args[1]
 
-	profile, err := getProfile(cmd, sender)
+	profile, err := queryProfile(cmd.Parent().Flag("node").Value.String(), sender)
 	if err != nil {
 		return err
 	}
@@ -197,7 +176,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 			accCur,
 			dueDate,
 		)
-		return bcmd.AppTx(InvoicerName, txBytes)
+		return bcmd.AppTx(invoicer.Name, txBytes)
 	}
 
 	taxes, err := types.ParseAmtCurTime(viper.GetString(FlagTaxesPaid), date)
@@ -227,7 +206,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 		taxes,
 	)
 
-	return bcmd.AppTx(InvoicerName, txBytes)
+	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
 func closeCmd(cmd *cobra.Command, args []string) error {
@@ -256,7 +235,7 @@ func closeCmd(cmd *cobra.Command, args []string) error {
 		viper.GetString(FlagTransactionID),
 		act,
 	)
-	return bcmd.AppTx(InvoicerName, txBytes)
+	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
 //TODO Move to tmlibs/common

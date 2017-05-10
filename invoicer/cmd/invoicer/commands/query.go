@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/hex"
 	"fmt"
+	"path"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ var (
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
 		Use:   "invoice [hexID]",
-		Short: "Query an invoice by invoice ID",
+		Short: "Query an invoice by ID",
 		RunE:  queryInvoiceCmd,
 	}
 
@@ -40,11 +41,10 @@ var (
 func init() {
 	//register flags
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
-	fs.Bool(FlagDownloadExp, false, "download expenses pdfs to the relative path specified")
+	fs.String(FlagDownloadExp, "", "download expenses pdfs to the relative path specified")
 
 	QueryInvoiceCmd.Flags().AddFlagSet(fs)
 
-	fs.String(FlagTo, "", "Destination address for the bits")
 	fs.Int(FlagNum, 0, "number of results to display, use 0 for no limit")
 	fs.Bool(FlagShort, false, "output fields: paid, amount, date, sender, receiver")
 	fs.String(FlagType, "",
@@ -77,31 +77,38 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 	//get the invoicer object and print it
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	invoice, err := queryInvoice(tmAddr, id)
+	invoice, err := queryInvoice(tmAddr, id) //TODO should also be querying for expense here :(
 	if err != nil {
 		return err
 	}
+
 	switch viper.GetString("output") {
 	case "text":
 		fmt.Println(string(wire.JSONBytes(invoice))) //TODO Actually make text
 	case "json":
 		fmt.Println(string(wire.JSONBytes(invoice)))
 	}
+
+	expense, ok := invoice.(types.Expense)
+	if ok {
+		savePath := viper.GetString(FlagDownloadExp)
+		if len(savePath) > 0 {
+			path.Join(savePath, expense.DocFileName)
+		}
+	}
+
 	return nil
 }
 
 func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	listInvoices, err := queryListInvoices(tmAddr)
-	if err != nil {
-		return err
-	}
-	listExpenses, err := queryListExpenses(tmAddr)
+	listInvoices, err := queryListInvoice(tmAddr)
 	if err != nil {
 		return err
 	}
 
+	_ = listInvoices
 	//TODO actually get invoices/expenses and filter by flags
 
 	//switch viper.GetString("output") {
@@ -118,7 +125,7 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	listProfiles, err := queryListProfiles(tmAddr)
+	listProfiles, err := queryListProfile(tmAddr)
 	if err != nil {
 		return err
 	}
@@ -133,15 +140,6 @@ func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 
 ///////////////////////////////////////////////////////////////////
 
-func queryInvoice(tmAddr string, id []byte) (invoice types.Invoice, err error) {
-	key := invoicer.InvoicerKey(id)
-	res, err := query(tmAddr, key)
-	if err != nil {
-		return invoice, err
-	}
-	return invoicer.GetInvoiceFromWire(res)
-}
-
 func queryProfile(tmAddr, name string) (invoice types.Profile, err error) {
 	key := invoicer.ProfileKey(name)
 	res, err := query(tmAddr, key)
@@ -151,31 +149,44 @@ func queryProfile(tmAddr, name string) (invoice types.Profile, err error) {
 	return invoicer.GetProfileFromWire(res)
 }
 
-func queryListProfiles(tmAddr string) (profile []types.Profile, err error) {
-	key := invoicer.ListProfilesKey()
+func queryInvoice(tmAddr string, id []byte) (invoice interface{}, err error) {
+
+	if len(id) == 0 {
+		return invoice, errors.New("invalid invoice query id")
+	}
+
+	key := invoicer.InvoiceKey(id)
+	res, err := query(tmAddr, key)
+	if err != nil {
+		return invoice, err
+	}
+
+	switch id[0] {
+	case types.TBIDExpense:
+		return invoicer.GetExpenseFromWire(res)
+	case types.TBIDInvoice:
+		return invoicer.GetInvoiceFromWire(res)
+	default: //should never occur if keys correctly written into the store
+		return invoice, errors.New("invalid query id type")
+	}
+}
+
+func queryListProfile(tmAddr string) (profile []string, err error) {
+	key := invoicer.ListProfileKey()
 	res, err := query(tmAddr, key)
 	if err != nil {
 		return profile, err
 	}
-	return invoicer.GetListProfilesFromWire(res)
+	return invoicer.GetListProfileFromWire(res)
 }
 
-func queryListInvoices(tmAddr string) (invoices []types.Invoice, err error) {
-	key := invoicer.ListInvoicesKey()
+func queryListInvoice(tmAddr string) (invoice [][]byte, err error) {
+	key := invoicer.ListInvoiceKey()
 	res, err := query(tmAddr, key)
 	if err != nil {
-		return invoices, err
+		return invoice, err
 	}
-	return invoicer.GetListInvoicesFromWire(res)
-}
-
-func queryListExpenses(tmAddr string) (expenses []types.Expense, err error) {
-	key := invoicer.ListExpensesKey()
-	res, err := query(tmAddr, key)
-	if err != nil {
-		return expenses, err
-	}
-	return invoicer.GetListExpensesFromWire(res)
+	return invoicer.GetListInvoiceFromWire(res)
 }
 
 //Wrap the basecoin query function with a response code check
