@@ -29,26 +29,26 @@ func runTxWageOpen(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte)
 	//Set the id, then validate a bit more
 	(&wage).SetID()
 
-	if _, err := getProfile(store, invoice.Ctx.Sender); err != nil {
+	if _, err := getProfile(store, wage.Ctx.Sender); err != nil {
 		return abci.ErrInternalError.AppendLog("Senders Profile doesn't exist")
 	}
-	if _, err := getProfile(store, invoice.Ctx.Receiver); err != nil {
+	if _, err := getProfile(store, wage.Ctx.Receiver); err != nil {
 		return abci.ErrInternalError.AppendLog("Receiver profile doesn't exist")
 	}
 
 	//Check if invoice already exists
 	invoices, err := getListInvoice(store)
 	for _, in := range invoices {
-		if bytes.Compare(in, invoice.ID) == 0 {
+		if bytes.Compare(in, wage.ID) == 0 {
 			return abci.ErrInternalError.AppendLog("Duplicate Invoice, edit the invoice notes to make them unique")
 		}
 	}
 
 	//Store invoice
-	store.Set(InvoiceKey(invoice.ID), wire.BinaryBytes(invoice))
+	store.Set(InvoiceKey(wage.ID), wire.BinaryBytes(wage))
 
 	//also add it to the list of open invoices
-	invoices = append(invoices, invoice.ID)
+	invoices = append(invoices, wage.ID)
 	store.Set(ListInvoiceKey(), wire.BinaryBytes(invoices))
 	return abci.OK
 }
@@ -66,6 +66,8 @@ func validateInvoiceCtx(ctx types.Context) abci.Result {
 		return abci.ErrInternalError.AppendLog("invoice amount is nil")
 	case ctx.Due.Before(time.Now()):
 		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
+	default:
+		return abci.OK
 	}
 }
 
@@ -83,7 +85,7 @@ func runTxExpenseOpen(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 	}
 
 	//Validate
-	res = validateInvoiceCtx(wage.Ctx)
+	res = validateInvoiceCtx(expense.Ctx)
 	if res.IsErr() {
 		return res
 	}
@@ -100,7 +102,7 @@ func runTxExpenseOpen(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 	}
 
 	//Return if the invoice already exists, aka no error was thrown
-	if _, err := getExpense(store, expense.ID); err == nil {
+	if _, err := getInvoice(store, expense.ID); err == nil {
 		return abci.ErrInternalError.AppendLog("Duplicate Invoice, edit the invoice notes to make them unique")
 	}
 
@@ -116,7 +118,7 @@ func runTxExpenseEdit(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 func runTxCloseInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
-	var close types.Close
+	var close types.CloseInvoice
 	err := wire.ReadBinaryBytes(txBytes, &close)
 	if err != nil {
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
@@ -133,12 +135,12 @@ func runTxCloseInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []b
 	//actually write the changes
 	switch close.ID[0] {
 	case types.TBIDExpense:
-		expense, err := getExpense(store, close.ID)
+		expense, err := getInvoice(store, close.ID)
 		if err != nil {
 			return abci.ErrInternalError.AppendLog("Expense ID is missing from existing expense")
 		}
 		store.Set(InvoiceKey(close.ID), wire.BinaryBytes(expense))
-	case types.TBIDInvoice:
+	case types.TBIDWage:
 		invoice, err := getInvoice(store, close.ID)
 		if err != nil {
 			return abci.ErrInternalError.AppendLog("Invoice ID is missing from existing invoices")

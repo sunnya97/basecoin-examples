@@ -23,28 +23,52 @@ var (
 		Short: "commands relating to invoicer system",
 	}
 
-	NewProfileCmd = &cobra.Command{
+	ProfileOpenCmd = &cobra.Command{
 		Use:   "new-profile [name]",
 		Short: "open a profile for sending/receiving invoices and expense claims",
-		RunE:  newProfileCmd,
+		RunE:  profileOpenCmd,
 	}
 
-	OpenInvoiceCmd = &cobra.Command{
+	ProfileEditCmd = &cobra.Command{
+		Use:   "new-profile [name]",
+		Short: "open a profile for sending/receiving invoices and expense claims",
+		RunE:  profileEditCmd,
+	}
+
+	ProfileCloseCmd = &cobra.Command{
+		Use:   "new-profile [name]",
+		Short: "open a profile for sending/receiving invoices and expense claims",
+		RunE:  profileCloseCmd,
+	}
+
+	WageOpenCmd = &cobra.Command{
 		Use:   "invoice [sender][amount]",
 		Short: "send an invoice",
-		RunE:  openInvoiceCmd,
+		RunE:  wageOpenCmd,
 	}
 
-	OpenExpenseCmd = &cobra.Command{
+	WageEditCmd = &cobra.Command{
+		Use:   "invoice [sender][amount]",
+		Short: "send an invoice",
+		RunE:  wageEditCmd,
+	}
+
+	ExpenseOpenCmd = &cobra.Command{
 		Use:   "expense [sender][amount]",
 		Short: "send an expense",
-		RunE:  openExpenseCmd,
+		RunE:  expenseOpenCmd,
 	}
 
-	CloseCmd = &cobra.Command{
+	ExpenseEditCmd = &cobra.Command{
+		Use:   "expense [sender][amount]",
+		Short: "send an expense",
+		RunE:  expenseEditCmd,
+	}
+
+	CloseInvoiceCmd = &cobra.Command{
 		Use:   "close [ID]",
 		Short: "close an invoice or expense",
-		RunE:  openExpenseCmd,
+		RunE:  closeInvoiceCmd,
 	}
 )
 
@@ -75,23 +99,23 @@ func init() {
 	fsClose.String(FlagCur, "", "payment amount in the format <decimal><currency> eg. 10.23usd")
 	fsClose.String(FlagDate, "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 
-	NewProfileCmd.Flags().AddFlagSet(fsProfile)
-	OpenInvoiceCmd.Flags().AddFlagSet(fsInvoice)
-	OpenExpenseCmd.Flags().AddFlagSet(fsInvoice) //intentional
-	OpenExpenseCmd.Flags().AddFlagSet(fsExpense)
-	CloseCmd.Flags().AddFlagSet(fsClose)
+	ProfileOpenCmd.Flags().AddFlagSet(fsProfile)
+	WageOpenCmd.Flags().AddFlagSet(fsInvoice)
+	ExpenseOpenCmd.Flags().AddFlagSet(fsInvoice) //intentional
+	ExpenseOpenCmd.Flags().AddFlagSet(fsExpense)
+	CloseInvoiceCmd.Flags().AddFlagSet(fsClose)
 
 	//register commands
 	InvoicerCmd.AddCommand(
-		NewProfileCmd,
-		OpenInvoiceCmd,
-		OpenExpenseCmd,
-		CloseCmd,
+		ProfileOpenCmd,
+		WageOpenCmd,
+		ExpenseOpenCmd,
+		CloseInvoiceCmd,
 	)
 	bcmd.RegisterTxSubcommand(InvoicerCmd)
 }
 
-func newProfileCmd(cmd *cobra.Command, args []string) error {
+func profileOpenCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("new-profile command requires an argument ([name])") //never stack trace
 	}
@@ -102,7 +126,7 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error loading timezone, error: ", err) //never stack trace
 	}
 
-	txBytes := types.NewTxBytesNewProfile(
+	txBytes := types.NewTxBytesProfileOpen(
 		name,
 		viper.GetString(FlagCur),
 		viper.GetString(FlagDepositInfo),
@@ -112,15 +136,31 @@ func newProfileCmd(cmd *cobra.Command, args []string) error {
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func openInvoiceCmd(cmd *cobra.Command, args []string) error {
-	return openInvoiceOrExpense(cmd, args, false)
+func profileEditCmd(cmd *cobra.Command, args []string) error {
+	return nil //TODO implement
 }
 
-func openExpenseCmd(cmd *cobra.Command, args []string) error {
-	return openInvoiceOrExpense(cmd, args, true)
+func profileCloseCmd(cmd *cobra.Command, args []string) error {
+	return nil //TODO implement
 }
 
-func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) error {
+func wageOpenCmd(cmd *cobra.Command, args []string) error {
+	return openWageOrExpense(cmd, args, false)
+}
+
+func wageEditCmd(cmd *cobra.Command, args []string) error {
+	return nil //TODO implement
+}
+
+func expenseOpenCmd(cmd *cobra.Command, args []string) error {
+	return openWageOrExpense(cmd, args, true)
+}
+
+func expenseEditCmd(cmd *cobra.Command, args []string) error {
+	return openWageOrExpense(cmd, args, true)
+}
+
+func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error {
 	if len(args) != 2 {
 		return fmt.Errorf("Command requires two arguments ([sender][amount])") //never stack trace
 	}
@@ -167,7 +207,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 
 	//if not an expense then we're almost done!
 	if !isExpense {
-		txBytes := types.NewTxBytesOpenInvoice(
+		txBytes := types.NewTxBytesWageOpen(
 			sender,
 			viper.GetString(FlagTo),
 			depositInfo,
@@ -193,7 +233,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	//Document []byte, DocFileName string, TaxesPaid *AmtCurTime) []byte {
 
 	_, filename := path.Split(viper.GetString(FlagReceipt))
-	txBytes := types.NewTxBytesOpenExpense(
+	txBytes := types.NewTxBytesExpenseOpen(
 		sender,
 		viper.GetString(FlagTo),
 		depositInfo,
@@ -209,7 +249,7 @@ func openInvoiceOrExpense(cmd *cobra.Command, args []string, isExpense bool) err
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func closeCmd(cmd *cobra.Command, args []string) error {
+func closeInvoiceCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("close command requires an argument ([HexID])") //never stack trace
 	}
@@ -230,7 +270,7 @@ func closeCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	txBytes := types.NewTxBytesClose(
+	txBytes := types.NewTxBytesCloseInvoice(
 		id,
 		viper.GetString(FlagTransactionID),
 		act,

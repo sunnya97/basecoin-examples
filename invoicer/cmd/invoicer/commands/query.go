@@ -161,14 +161,7 @@ func queryInvoice(tmAddr string, id []byte) (invoice interface{}, err error) {
 		return invoice, err
 	}
 
-	switch id[0] {
-	case types.TBIDExpense:
-		return invoicer.GetExpenseFromWire(res)
-	case types.TBIDInvoice:
-		return invoicer.GetInvoiceFromWire(res)
-	default: //should never occur if keys correctly written into the store
-		return invoice, errors.New("invalid query id type")
-	}
+	return invoicer.GetInvoiceFromWire(res)
 }
 
 func queryListProfile(tmAddr string) (profile []string, err error) {

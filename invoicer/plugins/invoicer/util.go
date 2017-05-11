@@ -9,36 +9,42 @@ import (
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
-func ProfileKey() []byte {
+func ProfileKey(name string) []byte {
+	return []byte(cmn.Fmt("%v,Profile=%v", Name, name))
+}
+
+func InvoiceKey(ID []byte) []byte {
+	return []byte(cmn.Fmt("%v,ID=%x", Name, ID))
+}
+
+func ListProfileKey() []byte {
 	return []byte(cmn.Fmt("%v,Profiles", Name))
 }
 
-func InvoiceKey() []byte {
+func ListInvoiceKey() []byte {
 	return []byte(cmn.Fmt("%v,Invoices", Name))
-}
-
-//Get objects directly from the store
-
-func getProfiles(store btypes.KVStore) (profile map[string]types.Profile, err error) {
-	bytes := store.Get(ProfileKey())
-	return GetProfileFromWire(bytes)
-}
-
-func getInvoices(store btypes.KVStore) (invoice map[string]types.Invoice, err error) {
-	bytes := store.Get(InvoiceKey())
-	return GetInvoiceFromWire(bytes)
 }
 
 //Get objects from query bytes
 
-func GetProfilesFromWire(bytes []byte) (profile map[string]types.Profile, err error) {
+func GetProfileFromWire(bytes []byte) (profile types.Profile, err error) {
 	out, err := getFromWire(bytes, profile)
-	return out.(map[string]types.Profile), err
+	return out.(types.Profile), err
 }
 
-func GetInvoicesFromWire(bytes []byte) (invoice map[string]types.Invoice, err error) {
+func GetInvoiceFromWire(bytes []byte) (invoice types.Invoice, err error) {
 	out, err := getFromWire(bytes, invoice)
-	return out.(map[string]types.Invoice), err
+	return out.(types.Invoice), err
+}
+
+func GetListProfileFromWire(bytes []byte) (profiles []string, err error) {
+	out, err := getFromWire(bytes, profiles)
+	return out.([]string), err
+}
+
+func GetListInvoiceFromWire(bytes []byte) (invoices [][]byte, err error) {
+	out, err := getFromWire(bytes, invoices)
+	return out.([][]byte), err
 }
 
 func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
@@ -54,4 +60,26 @@ func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
 		err = abci.ErrInternalError.AppendLog("state not found")
 	}
 	return destination, err
+}
+
+//Get objects directly from the store
+
+func getProfile(store btypes.KVStore, name string) (types.Profile, error) {
+	bytes := store.Get(ProfileKey(name))
+	return GetProfileFromWire(bytes)
+}
+
+func getInvoice(store btypes.KVStore, ID []byte) (types.Invoice, error) {
+	bytes := store.Get(InvoiceKey(ID))
+	return GetInvoiceFromWire(bytes)
+}
+
+func getListProfile(store btypes.KVStore) ([]string, error) {
+	bytes := store.Get(ListProfileKey())
+	return GetListProfileFromWire(bytes)
+}
+
+func getListInvoice(store btypes.KVStore) ([][]byte, error) {
+	bytes := store.Get(ListProfileKey())
+	return GetListInvoiceFromWire(bytes)
 }
