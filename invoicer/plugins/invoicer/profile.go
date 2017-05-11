@@ -19,21 +19,9 @@ func validateProfile(profile types.Profile) abci.Result {
 	}
 }
 
-func profileIsActive(active []string, name string) bool {
-	for _, p := range active {
-		if p == name {
-			return true, nil
-		}
-	}
-}
-
-func writeProfile(store btypes.Store, active []string, profile types.Profile) {
-	//Store profile
-	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(profile))
-
-	//also add it to the list of open profiles
-	active = append(active, profile.Name)
-	store.Set(ListProfileKey(), wire.BinaryBytes(active))
+func writeProfile(store btypes.Store, profiles map[string]types.Profiles, profile types.Profile) {
+	profiles[profile.Name] = profile
+	store.Set(ProfileKey(), wire.BinaryBytes(profiles))
 }
 
 func removeProfile(store btypes.Store, active []string, name string) {
@@ -66,11 +54,12 @@ func runTxNewProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byt
 		return res
 	}
 
-	//Check if profile is active
-	active, err := getListProfile(store)
+	//getprofile list
+	profiles, err := getProfiles()
 	if err != nil {
-		return abci.ErrInternalError.AppendLog("error retrieving active profile list")
+		return abci.ErrInternalError.AppendLog("error retrieving active profiles")
 	}
+
 	if profileIsActive(active, profile.Name) {
 		return abci.ErrInternalError.AppendLog("Cannot create an already existing Profile")
 	}

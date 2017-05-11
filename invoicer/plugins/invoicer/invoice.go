@@ -11,30 +11,23 @@ import (
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
-func runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func runTxWageOpen(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
-	var invoice types.Invoice
-	err := wire.ReadBinaryBytes(txBytes, &invoice)
+	var wage types.Wage
+	err := wire.ReadBinaryBytes(txBytes, &wage)
 	if err != nil {
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
-	//Validate Tx
-	switch {
-	case len(invoice.Ctx.Sender) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have a sender")
-	case len(invoice.Ctx.Receiver) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
-	case len(invoice.Ctx.AcceptedCur) == 0:
-		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
-	case invoice.Ctx.Amount == nil:
-		return abci.ErrInternalError.AppendLog("invoice amount is nil")
-	case invoice.Ctx.Due.Before(time.Now()):
-		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
+	//Validate
+	res = validateInvoiceCtx(wage.Ctx)
+	if res.IsErr() {
+		return res
 	}
 
-	(&invoice).SetID()
+	//Set the id, then validate a bit more
+	(&wage).SetID()
 
 	if _, err := getProfile(store, invoice.Ctx.Sender); err != nil {
 		return abci.ErrInternalError.AppendLog("Senders Profile doesn't exist")
@@ -60,11 +53,27 @@ func runTxOpenInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 	return abci.OK
 }
 
-func runTxEditInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func validateInvoiceCtx(ctx types.Context) abci.Result {
+	//Validate Tx
+	switch {
+	case len(ctx.Sender) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a sender")
+	case len(ctx.Receiver) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
+	case len(ctx.AcceptedCur) == 0:
+		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
+	case ctx.Amount == nil:
+		return abci.ErrInternalError.AppendLog("invoice amount is nil")
+	case ctx.Due.Before(time.Now()):
+		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
+	}
+}
+
+func runTxWageEdit(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 	return abci.OK //TODO add functionality
 }
 
-func runTxOpenExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func runTxExpenseOpen(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
 	var expense types.Expense
@@ -73,20 +82,13 @@ func runTxOpenExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
 	}
 
-	//Validate Tx
-	switch {
-	case len(expense.Ctx.Sender) == 0:
-		return abci.ErrInternalError.AppendLog("expense must have a sender")
-	case len(expense.Ctx.Receiver) == 0:
-		return abci.ErrInternalError.AppendLog("expense must have a receiver")
-	case len(expense.Ctx.AcceptedCur) == 0:
-		return abci.ErrInternalError.AppendLog("expense must have an accepted currency")
-	case expense.Ctx.Amount == nil:
-		return abci.ErrInternalError.AppendLog("expense amount is nil")
-	case expense.Ctx.Due.Before(time.Now()):
-		return abci.ErrInternalError.AppendLog("cannot issue overdue expense")
+	//Validate
+	res = validateInvoiceCtx(wage.Ctx)
+	if res.IsErr() {
+		return res
 	}
 
+	//Set the id, then validate a bit more
 	(&expense).SetID()
 
 	if _, err := getProfile(store, expense.Ctx.Sender); err != nil {
@@ -107,11 +109,11 @@ func runTxOpenExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []by
 	return abci.OK
 }
 
-func runTxEditExpense(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func runTxExpenseEdit(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 	return abci.OK //TODO add functionality
 }
 
-func runTxClose(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
+func runTxCloseInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
 
 	// Decode tx
 	var close types.Close
