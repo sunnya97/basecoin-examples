@@ -126,13 +126,16 @@ func profileOpenCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error loading timezone, error: ", err) //never stack trace
 	}
 
-	txBytes := types.NewTxBytesProfileOpen(
+	profile := types.NewProfile(
 		name,
 		viper.GetString(FlagCur),
 		viper.GetString(FlagDepositInfo),
 		viper.GetInt(FlagDueDurationDays),
 		*timezone,
 	)
+
+	txBytes := profile.TxBytesOpen()
+
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
@@ -157,7 +160,7 @@ func expenseOpenCmd(cmd *cobra.Command, args []string) error {
 }
 
 func expenseEditCmd(cmd *cobra.Command, args []string) error {
-	return openWageOrExpense(cmd, args, true)
+	return nil //TODO implement
 }
 
 func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error {
@@ -206,8 +209,12 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 	}
 
 	//if not an expense then we're almost done!
-	if !isExpense {
-		txBytes := types.NewTxBytesWageOpen(
+
+	var invoice types.Invoice
+
+	switch isExpense {
+	case false:
+		invoice = types.NewWage(
 			sender,
 			viper.GetString(FlagTo),
 			depositInfo,
@@ -216,36 +223,32 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 			accCur,
 			dueDate,
 		)
-		return bcmd.AppTx(invoicer.Name, txBytes)
+	case true:
+		taxes, err := types.ParseAmtCurTime(viper.GetString(FlagTaxesPaid), date)
+		if err != nil {
+			return err
+		}
+		docBytes, err := ioutil.ReadFile(viper.GetString(FlagReceipt))
+		if err != nil {
+			return err
+		}
+
+		_, filename := path.Split(viper.GetString(FlagReceipt))
+		invoice = types.NewExpense(
+			sender,
+			viper.GetString(FlagTo),
+			depositInfo,
+			viper.GetString(FlagNotes),
+			amt,
+			accCur,
+			dueDate,
+			docBytes,
+			filename,
+			taxes,
+		)
 	}
 
-	taxes, err := types.ParseAmtCurTime(viper.GetString(FlagTaxesPaid), date)
-	if err != nil {
-		return err
-	}
-	docBytes, err := ioutil.ReadFile(viper.GetString(FlagReceipt))
-	if err != nil {
-		return err
-	}
-
-	//func NewTxBytesOpenExpense(Sender, Receiver, DepositInfo, Notes string,
-	//Amount *AmtCurTime, AcceptedCur string, Due time.Time,
-	//Document []byte, DocFileName string, TaxesPaid *AmtCurTime) []byte {
-
-	_, filename := path.Split(viper.GetString(FlagReceipt))
-	txBytes := types.NewTxBytesExpenseOpen(
-		sender,
-		viper.GetString(FlagTo),
-		depositInfo,
-		viper.GetString(FlagNotes),
-		amt,
-		viper.GetString(FlagCur),
-		dueDate,
-		docBytes,
-		filename,
-		taxes,
-	)
-
+	txBytes := invoice.TxBytesOpen()
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
@@ -270,11 +273,12 @@ func closeInvoiceCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	txBytes := types.NewTxBytesCloseInvoice(
+	closeInvoice := types.NewCloseInvoice(
 		id,
 		viper.GetString(FlagTransactionID),
 		act,
 	)
+	txBytes := closeInvoice.TxBytes()
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 

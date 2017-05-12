@@ -39,8 +39,8 @@ type Profile struct {
 }
 
 func NewProfile(Name string, AcceptedCur string, DepositInfo string,
-	DueDurationDays int, Timezone time.Location) Profile {
-	return Profile{
+	DueDurationDays int, Timezone time.Location) *Profile {
+	return &Profile{
 		Name:            Name,
 		AcceptedCur:     AcceptedCur,
 		DepositInfo:     DepositInfo,
@@ -49,22 +49,22 @@ func NewProfile(Name string, AcceptedCur string, DepositInfo string,
 	}
 }
 
-func (p Profile) TxBytesOpen() []byte {
-	return txBytes(p, TBTxProfileOpen)
+func (p *Profile) TxBytesOpen() []byte {
+	return txBytes(&p, TBTxProfileOpen)
 }
 
-func (p Profile) TxBytesEdit() []byte {
-	return txBytes(p, TBTxProfileEdit)
+func (p *Profile) TxBytesEdit() []byte {
+	return txBytes(&p, TBTxProfileEdit)
 }
 
-func (p Profile) TxBytesClose() []byte {
-	return txBytes(p, TBTxProfileClose)
+func (p *Profile) TxBytesClose() []byte {
+	return txBytes(&p, TBTxProfileClose)
 }
 
 type Invoice interface {
 	SetID()
-	TxBytesOpen()
-	TxBytesEdit()
+	TxBytesOpen() []byte
+	TxBytesEdit() []byte
 }
 
 type Wage struct {
@@ -86,9 +86,9 @@ type Context struct {
 }
 
 func NewWage(Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurTime, AcceptedCur string, Due time.Time) Wage {
+	Amount *AmtCurTime, AcceptedCur string, Due time.Time) *Wage {
 
-	return Wage{
+	return &Wage{
 		Ctx: Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
@@ -110,11 +110,11 @@ func (w *Wage) SetID() {
 }
 
 func (w *Wage) TxBytesOpen() []byte {
-	return txBytes(w, TBTxWageOpen)
+	return txBytes(&w, TBTxWageOpen)
 }
 
 func (w *Wage) TxBytesEdit() []byte {
-	return txBytes(w, TBTxWageEdit)
+	return txBytes(&w, TBTxWageEdit)
 }
 
 type Expense struct {
@@ -129,9 +129,9 @@ type Expense struct {
 
 func NewExpense(Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
-	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) Expense {
+	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
 
-	return Expense{
+	return &Expense{
 		Ctx: Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
@@ -156,11 +156,11 @@ func (e *Expense) SetID() {
 }
 
 func (e *Expense) TxBytesOpen() []byte {
-	return txBytes(e, TBTxExpenseOpen)
+	return txBytes(&e, TBTxExpenseOpen)
 }
 
 func (e *Expense) TxBytesEdit() []byte {
-	return txBytes(e, TBTxExpenseEdit)
+	return txBytes(&e, TBTxExpenseEdit)
 }
 
 type CloseInvoice struct {
@@ -169,8 +169,8 @@ type CloseInvoice struct {
 	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewClose(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime) CloseInvoice {
-	return CloseInvoice{
+func NewCloseInvoice(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoice {
+	return &CloseInvoice{
 		ID:             ID,
 		TransactionID:  TransactionID,
 		PaymentCurTime: PaymentCurTime,
