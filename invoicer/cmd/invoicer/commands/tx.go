@@ -7,6 +7,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -24,49 +25,49 @@ var (
 	}
 
 	ProfileOpenCmd = &cobra.Command{
-		Use:   "new-profile [name]",
+		Use:   "profile-open [name]",
 		Short: "open a profile for sending/receiving invoices and expense claims",
 		RunE:  profileOpenCmd,
 	}
 
 	ProfileEditCmd = &cobra.Command{
-		Use:   "new-profile [name]",
+		Use:   "profile-edit [name]",
 		Short: "open a profile for sending/receiving invoices and expense claims",
 		RunE:  profileEditCmd,
 	}
 
 	ProfileCloseCmd = &cobra.Command{
-		Use:   "new-profile [name]",
+		Use:   "profile-close [name]",
 		Short: "open a profile for sending/receiving invoices and expense claims",
 		RunE:  profileCloseCmd,
 	}
 
 	WageOpenCmd = &cobra.Command{
-		Use:   "invoice [sender][amount]",
+		Use:   "wage-open [sender][amount]",
 		Short: "send an invoice",
 		RunE:  wageOpenCmd,
 	}
 
 	WageEditCmd = &cobra.Command{
-		Use:   "invoice [sender][amount]",
+		Use:   "wage-edit [sender][amount]",
 		Short: "send an invoice",
 		RunE:  wageEditCmd,
 	}
 
 	ExpenseOpenCmd = &cobra.Command{
-		Use:   "expense [sender][amount]",
+		Use:   "expense-open [sender][amount]",
 		Short: "send an expense",
 		RunE:  expenseOpenCmd,
 	}
 
 	ExpenseEditCmd = &cobra.Command{
-		Use:   "expense [sender][amount]",
+		Use:   "expense-edit [sender][amount]",
 		Short: "send an expense",
 		RunE:  expenseEditCmd,
 	}
 
 	CloseInvoiceCmd = &cobra.Command{
-		Use:   "close [ID]",
+		Use:   "close-invoice [ID]",
 		Short: "close an invoice or expense",
 		RunE:  closeInvoiceCmd,
 	}
@@ -99,31 +100,59 @@ func init() {
 	fsClose.String(FlagCur, "", "payment amount in the format <decimal><currency> eg. 10.23usd")
 	fsClose.String(FlagDate, "", "date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 
+	fsEdit := flag.NewFlagSet("", flag.ContinueOnError)
+	fsEdit.String(FlagTransactionID, "", "Hex ID of the invoice to modify")
+
 	ProfileOpenCmd.Flags().AddFlagSet(fsProfile)
+	ProfileEditCmd.Flags().AddFlagSet(fsProfile)
+
 	WageOpenCmd.Flags().AddFlagSet(fsInvoice)
-	ExpenseOpenCmd.Flags().AddFlagSet(fsInvoice) //intentional
+	WageEditCmd.Flags().AddFlagSet(fsInvoice)
+	WageEditCmd.Flags().AddFlagSet(fsEdit)
+
+	ExpenseOpenCmd.Flags().AddFlagSet(fsInvoice)
 	ExpenseOpenCmd.Flags().AddFlagSet(fsExpense)
+	ExpenseEditCmd.Flags().AddFlagSet(fsInvoice)
+	ExpenseEditCmd.Flags().AddFlagSet(fsExpense)
+	ExpenseEditCmd.Flags().AddFlagSet(fsEdit)
+
 	CloseInvoiceCmd.Flags().AddFlagSet(fsClose)
 
 	//register commands
 	InvoicerCmd.AddCommand(
 		ProfileOpenCmd,
+		ProfileEditCmd,
+		ProfileCloseCmd,
 		WageOpenCmd,
+		WageEditCmd,
 		ExpenseOpenCmd,
+		ExpenseEditCmd,
 		CloseInvoiceCmd,
 	)
 	bcmd.RegisterTxSubcommand(InvoicerCmd)
 }
 
 func profileOpenCmd(cmd *cobra.Command, args []string) error {
+	return profileCmd(args, types.TBTxProfileOpen)
+}
+
+func profileEditCmd(cmd *cobra.Command, args []string) error {
+	return profileCmd(args, types.TBTxProfileEdit)
+}
+
+func profileCloseCmd(cmd *cobra.Command, args []string) error {
+	return profileCmd(args, types.TBTxProfileClose)
+}
+
+func profileCmd(args []string, TxTB byte) error {
 	if len(args) != 1 {
-		return fmt.Errorf("new-profile command requires an argument ([name])") //never stack trace
+		return errCmdReqArg("name")
 	}
 	name := args[0]
 
 	timezone, err := time.LoadLocation(viper.GetString(FlagTimezone))
 	if err != nil {
-		return fmt.Errorf("error loading timezone, error: ", err) //never stack trace
+		return errors.Wrap(err, "error loading timezone")
 	}
 
 	profile := types.NewProfile(
@@ -134,36 +163,28 @@ func profileOpenCmd(cmd *cobra.Command, args []string) error {
 		*timezone,
 	)
 
-	txBytes := profile.TxBytesOpen()
+	txBytes := types.TxBytes(*profile, TxTB)
 
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func profileEditCmd(cmd *cobra.Command, args []string) error {
-	return nil //TODO implement
-}
-
-func profileCloseCmd(cmd *cobra.Command, args []string) error {
-	return nil //TODO implement
-}
-
 func wageOpenCmd(cmd *cobra.Command, args []string) error {
-	return openWageOrExpense(cmd, args, false)
+	return invoiceCmd(cmd, args, types.TBTxWageOpen)
 }
 
 func wageEditCmd(cmd *cobra.Command, args []string) error {
-	return nil //TODO implement
+	return invoiceCmd(cmd, args, types.TBTxWageEdit)
 }
 
 func expenseOpenCmd(cmd *cobra.Command, args []string) error {
-	return openWageOrExpense(cmd, args, true)
+	return invoiceCmd(cmd, args, types.TBTxExpenseOpen)
 }
 
 func expenseEditCmd(cmd *cobra.Command, args []string) error {
-	return nil //TODO implement
+	return invoiceCmd(cmd, args, types.TBTxExpenseEdit)
 }
 
-func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error {
+func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 	if len(args) != 2 {
 		return fmt.Errorf("Command requires two arguments ([sender][amount])") //never stack trace
 	}
@@ -184,6 +205,8 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 		return err
 	}
 
+	//retrieve flags, or if they aren't used, use the senders profile's default
+
 	var dueDate time.Time
 	if len(viper.GetString(FlagDueDate)) > 0 {
 		dueDate, err = types.ParseDate(viper.GetString(FlagDueDate), viper.GetString(FlagTimezone))
@@ -202,19 +225,34 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 	}
 
 	var accCur string
-	if len(viper.GetString(FlagDepositInfo)) > 0 {
+	if len(viper.GetString(FlagCur)) > 0 {
 		accCur = viper.GetString(FlagCur)
 	} else {
 		accCur = profile.AcceptedCur
 	}
 
-	//if not an expense then we're almost done!
+	//get the old id to remove if editing
+	var id []byte = nil
+	idRaw := viper.GetString(FlagTransactionID)
+	if len(idRaw) > 0 {
+		if !isHex(idRaw) {
+			return errBadHexID
+		}
+		id, err = hex.DecodeString(StripHex(idRaw))
+		if err != nil {
+			return err
+		}
+	} else if txTB == types.TBTxWageEdit { //require this flag if
+		errors.New("need the id to edit, please specify through the flag --id")
+	}
 
 	var invoice types.Invoice
 
-	switch isExpense {
-	case false:
+	switch txTB {
+	//if not an expense then we're almost done!
+	case types.TBTxWageOpen, types.TBTxWageEdit:
 		invoice = types.NewWage(
+			id,
 			sender,
 			viper.GetString(FlagTo),
 			depositInfo,
@@ -223,7 +261,7 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 			accCur,
 			dueDate,
 		)
-	case true:
+	case types.TBTxExpenseOpen, types.TBTxExpenseEdit:
 		taxes, err := types.ParseAmtCurTime(viper.GetString(FlagTaxesPaid), date)
 		if err != nil {
 			return err
@@ -235,6 +273,7 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 
 		_, filename := path.Split(viper.GetString(FlagReceipt))
 		invoice = types.NewExpense(
+			id,
 			sender,
 			viper.GetString(FlagTo),
 			depositInfo,
@@ -246,18 +285,21 @@ func openWageOrExpense(cmd *cobra.Command, args []string, isExpense bool) error 
 			filename,
 			taxes,
 		)
+	default:
+		return errors.New("Unrecognized TypeBytes")
 	}
 
-	txBytes := invoice.TxBytesOpen()
+	//txBytes := invoice.TxBytesOpen()
+	txBytes := types.TxBytes(invoice, txTB)
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
 func closeInvoiceCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("close command requires an argument ([HexID])") //never stack trace
+		return errCmdReqArg("HexID")
 	}
 	if !isHex(args[0]) {
-		return fmt.Errorf("HexID is not formatted correctly") //never stack trace
+		return errBadHexID
 	}
 	id, err := hex.DecodeString(StripHex(args[0]))
 	if err != nil {
@@ -280,24 +322,4 @@ func closeInvoiceCmd(cmd *cobra.Command, args []string) error {
 	)
 	txBytes := closeInvoice.TxBytes()
 	return bcmd.AppTx(invoicer.Name, txBytes)
-}
-
-//TODO Move to tmlibs/common
-// Returns true for non-empty hex-string prefixed with "0x"
-func isHex(s string) bool {
-	if len(s) > 2 && s[:2] == "0x" {
-		_, err := hex.DecodeString(s[2:])
-		if err != nil {
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-func StripHex(s string) string {
-	if isHex(s) {
-		return s[2:]
-	}
-	return s
 }

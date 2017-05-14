@@ -47,19 +47,18 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 	//Note that the zero position of txBytes contains the type-byte for the tx type
 	switch txBytes[0] {
 	case types.TBTxProfileOpen:
-		return runTxProfileOpen(store, ctx, txBytes[1:])
+		return runTxProfile(store, ctx, txBytes[1:], false, writeProfile)
 	case types.TBTxProfileEdit:
-		return runTxProfileEdit(store, ctx, txBytes[1:])
+		return runTxProfile(store, ctx, txBytes[1:], true, writeProfile)
 	case types.TBTxProfileClose:
-		return runTxProfileClose(store, ctx, txBytes[1:])
-	case types.TBTxWageOpen:
-		return runTxWageOpen(store, ctx, txBytes[1:])
-	case types.TBTxWageEdit:
-		return runTxWageEdit(store, ctx, txBytes[1:])
-	case types.TBTxExpenseOpen:
-		return runTxExpenseOpen(store, ctx, txBytes[1:])
-	case types.TBTxExpenseEdit:
-		return runTxExpenseEdit(store, ctx, txBytes[1:])
+		return runTxProfile(store, ctx, txBytes[1:], true, removeProfile)
+	case types.TBTxWageOpen,
+		types.TBTxWageEdit:
+		//return runTxInvoice(store, ctx, txBytes[1:], new(types.Wage))
+		return runTxWage(store, ctx, txBytes[1:])
+	case types.TBTxExpenseOpen,
+		types.TBTxExpenseEdit:
+		return runTxInvoice(store, ctx, txBytes[1:], new(types.Expense))
 	case types.TBTxCloseInvoice:
 		return runTxCloseInvoice(store, ctx, txBytes[1:])
 	case types.TBTxBulkImport:

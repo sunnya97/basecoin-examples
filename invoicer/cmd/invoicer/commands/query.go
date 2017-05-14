@@ -3,7 +3,9 @@ package commands
 import (
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"path"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -20,7 +22,7 @@ import (
 var (
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
-		Use:   "invoice [hexID]",
+		Use:   "invoice [HexID]",
 		Short: "Query an invoice by ID",
 		RunE:  queryInvoiceCmd,
 	}
@@ -32,7 +34,7 @@ var (
 	}
 
 	QueryProfileCmd = &cobra.Command{
-		Use:   "profile [name]",
+		Use:   "profile [Name]",
 		Short: "Query a profile",
 		RunE:  queryProfileCmd,
 	}
@@ -72,10 +74,10 @@ func init() {
 func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 
 	if len(args) != 1 {
-		return fmt.Errorf("query command requires an argument ([hexID])") //never stack trace
+		return errCmdReqArg("HexID")
 	}
 	if !isHex(args[0]) {
-		return fmt.Errorf("HexID is not formatted correctly") //never stack trace
+		return errBadHexID
 	}
 	id, err := hex.DecodeString(StripHex(args[0]))
 	if err != nil {
@@ -97,11 +99,11 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 		fmt.Println(string(wire.JSONBytes(invoice)))
 	}
 
-	expense, ok := invoice.(*types.Expense)
-	if ok {
-		savePath := viper.GetString(FlagDownloadExp)
-		if len(savePath) > 0 {
-			path.Join(savePath, expense.DocFileName)
+	expense, isExpense := invoice.(*types.Expense)
+	if isExpense {
+		err = downloadExp(expense)
+		if err != nil {
+			return errors.Errorf("problem writing receipt file %v", err)
 		}
 	}
 
@@ -122,12 +124,76 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 
 	var invoices []types.Invoice
 	for _, id := range listInvoices {
+
 		invoice, err := queryInvoice(tmAddr, id)
 		if err != nil {
 			return errors.Errorf("bad invoice in active invoice list %v", err)
 		}
+		wage, isWage := invoice.(*types.Wage)
+		expense, isExpense := invoice.(*types.Expense)
+
+		var ctx types.Context
+		var transactionID string
+		switch {
+		case isWage:
+			ctx = wage.Ctx
+			transactionID = wage.TransactionID
+		case isExpense:
+			ctx = expense.Ctx
+			transactionID = expense.TransactionID
+		}
+
+		//continue if doesn't have the correct sender
+		from := viper.GetString(FlagFrom)
+		if len(from) > 0 && from != ctx.Sender {
+			continue
+		}
+
+		//check the type filter flags
+		ty := viper.GetString(FlagType)
+		wageFilt, expenseFilt, paidFilt, unpaidFilt := true, true, true, true
+		if len(ty) > 0 {
+			wageFilt, expenseFilt, paidFilt, unpaidFilt = false, false, false, false
+			if strings.Contains(ty, "wage") {
+				wageFilt = true
+			}
+			if strings.Contains(ty, "expense") {
+				expenseFilt = true
+			}
+			if strings.Contains(ty, "paid") {
+				paidFilt = true
+			}
+			if strings.Contains(ty, "unpaid") {
+				unpaidFilt = true
+			}
+		}
+		if (wageFilt == false && isWage) ||
+			(expenseFilt == false && isExpense) ||
+			(len(transactionID) > 0 && paidFilt == false) ||
+			(len(transactionID) == 0 && unpaidFilt == false) {
+
+			continue
+		}
+
+		if isExpense {
+			err = downloadExp(expense)
+			if err != nil {
+				return errors.Errorf("problem writing reciept file %v", err)
+			}
+		}
+
+		//actually add invoices list to display
 		invoices = append(invoices, invoice)
+
+		//Limit the number of invoices retrieved
+		maxInv := viper.GetInt(FlagNum)
+		if len(invoices) > maxInv && maxInv > 0 {
+			break
+		}
 	}
+
+	//TODO add short flag display functionality
+	//viper.GetString(FlagShort)
 
 	switch viper.GetString("output") {
 	case "text":
@@ -138,9 +204,21 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func downloadExp(expense *types.Expense) error {
+	savePath := viper.GetString(FlagDownloadExp)
+	if len(savePath) > 0 {
+		savePath = path.Join(savePath, expense.DocFileName)
+		err := ioutil.WriteFile(savePath, expense.Document, 0644)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func queryProfileCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("query command requires an argument ([name])") //never stack trace
+		return errCmdReqArg("Name")
 	}
 
 	name := args[0]
@@ -180,12 +258,14 @@ func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 
 ///////////////////////////////////////////////////////////////////
 
-func queryProfile(tmAddr, name string) (invoice types.Profile, err error) {
+func queryProfile(tmAddr, name string) (profile types.Profile, err error) {
 	key := invoicer.ProfileKey(name)
+
 	res, err := query(tmAddr, key)
 	if err != nil {
-		return invoice, err
+		return profile, err
 	}
+
 	return invoicer.GetProfileFromWire(res)
 }
 

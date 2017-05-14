@@ -1,7 +1,7 @@
 package invoicer
 
 import (
-	abci "github.com/tendermint/abci/types"
+	"fmt"
 	btypes "github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
 	cmn "github.com/tendermint/tmlibs/common"
@@ -28,38 +28,42 @@ func ListInvoiceKey() []byte {
 //Get objects from query bytes
 
 func GetProfileFromWire(bytes []byte) (profile types.Profile, err error) {
-	out, err := getFromWire(bytes, profile)
-	return out.(types.Profile), err
+	if len(bytes) == 0 {
+		return profile, errStateNotFound
+	}
+
+	err = wire.ReadBinaryBytes(bytes, &profile)
+	fmt.Printf("%+v\n", err)
+	return profile, wrapErrDecodingState(err)
 }
 
 func GetInvoiceFromWire(bytes []byte) (invoice types.Invoice, err error) {
-	out, err := getFromWire(bytes, invoice)
-	return out.(types.Invoice), err
+	inv := struct{ types.Invoice }{}
+	if len(bytes) == 0 {
+		return invoice, errStateNotFound
+	}
+	err = wire.ReadBinaryBytes(bytes, &inv)
+	return inv.Invoice, wrapErrDecodingState(err)
 }
 
 func GetListProfileFromWire(bytes []byte) (profiles []string, err error) {
-	out, err := getFromWire(bytes, profiles)
-	return out.([]string), err
+
+	//if list uninitilialized return new
+	if len(bytes) == 0 {
+		return profiles, nil
+	}
+	err = wire.ReadBinaryBytes(bytes, &profiles)
+	return profiles, wrapErrDecodingState(err)
 }
 
 func GetListInvoiceFromWire(bytes []byte) (invoices [][]byte, err error) {
-	out, err := getFromWire(bytes, invoices)
-	return out.([][]byte), err
-}
 
-func getFromWire(bytes []byte, destination interface{}) (interface{}, error) {
-	var err error
-
-	//Determine if the object already exists and load
-	if len(bytes) > 0 { //is there a record of the object existing?
-		err = wire.ReadBinaryBytes(bytes, &destination)
-		if err != nil {
-			err = abci.ErrInternalError.AppendLog("Error decoding state: " + err.Error())
-		}
-	} else {
-		err = abci.ErrInternalError.AppendLog("state not found")
+	//if list uninitilialized return new
+	if len(bytes) == 0 {
+		return invoices, nil
 	}
-	return destination, err
+	err = wire.ReadBinaryBytes(bytes, &invoices)
+	return invoices, wrapErrDecodingState(err)
 }
 
 //Get objects directly from the store
@@ -80,6 +84,6 @@ func getListProfile(store btypes.KVStore) ([]string, error) {
 }
 
 func getListInvoice(store btypes.KVStore) ([][]byte, error) {
-	bytes := store.Get(ListProfileKey())
+	bytes := store.Get(ListInvoiceKey())
 	return GetListInvoiceFromWire(bytes)
 }

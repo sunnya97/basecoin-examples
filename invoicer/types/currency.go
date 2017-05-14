@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/shopspring/decimal"
 )
 
 type CurTime struct {
@@ -18,7 +17,7 @@ type CurTime struct {
 
 type AmtCurTime struct {
 	Cur    CurTime
-	Amount decimal.Decimal
+	Amount string //Decimal Number
 }
 
 func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
@@ -27,13 +26,9 @@ func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 		return nil, errors.New("not enought information to parse AmtCurTime")
 	}
 
-	var reAmt = regexp.MustCompile("(\\d+)")
-	amt, err := decimal.NewFromString(reAmt.FindString(amtCur))
-	if err != nil {
-		return nil, err
-	}
-
+	var reAmt = regexp.MustCompile("([\\d\\.]+)")
 	var reCur = regexp.MustCompile("([^\\d\\W]+)")
+	amt := reAmt.FindString(amtCur)
 	cur := reCur.FindString(amtCur)
 
 	return &AmtCurTime{CurTime{cur, date}, amt}, nil

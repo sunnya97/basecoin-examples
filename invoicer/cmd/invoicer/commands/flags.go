@@ -27,6 +27,6 @@ var (
 	FlagReceipt   string = "receipt"
 	FlagTaxesPaid string = "taxes"
 
-	//close flags
+	//close/edit flags
 	FlagTransactionID string = "id"
 )

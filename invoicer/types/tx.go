@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/tendermint/go-wire"
+	"github.com/tendermint/go-wire/data"
 	"github.com/tendermint/tmlibs/merkle"
 )
 
@@ -25,7 +26,7 @@ const (
 	TBTxBulkImport
 )
 
-func txBytes(object interface{}, tb byte) []byte {
+func TxBytes(object interface{}, tb byte) []byte {
 	data := wire.BinaryBytes(object)
 	return append([]byte{tb}, data...)
 }
@@ -49,23 +50,18 @@ func NewProfile(Name string, AcceptedCur string, DepositInfo string,
 	}
 }
 
-func (p *Profile) TxBytesOpen() []byte {
-	return txBytes(&p, TBTxProfileOpen)
-}
-
-func (p *Profile) TxBytesEdit() []byte {
-	return txBytes(&p, TBTxProfileEdit)
-}
-
-func (p *Profile) TxBytesClose() []byte {
-	return txBytes(&p, TBTxProfileClose)
-}
-
 type Invoice interface {
 	SetID()
-	TxBytesOpen() []byte
-	TxBytesEdit() []byte
+	GetID() []byte
+	GetCtx() Context
 }
+
+var invoiceMapper = data.NewMapper(struct{ Invoice }{}).
+	RegisterImplementation(&Wage{}, "wage", 0x01).
+	RegisterImplementation(&Expense{}, "expense", 0x02)
+
+var _ Invoice = &Wage{}
+var _ Invoice = new(Expense)
 
 type Wage struct {
 	Ctx            Context
@@ -85,7 +81,7 @@ type Context struct {
 	Due         time.Time
 }
 
-func NewWage(Sender, Receiver, DepositInfo, Notes string,
+func NewWage(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time) *Wage {
 
 	return &Wage{
@@ -98,7 +94,7 @@ func NewWage(Sender, Receiver, DepositInfo, Notes string,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
 		},
-		ID:             nil,
+		ID:             ID,
 		TransactionID:  "",
 		PaymentCurTime: nil,
 	}
@@ -109,12 +105,12 @@ func (w *Wage) SetID() {
 	w.ID = append([]byte{TBIDWage}, hashBytes...)
 }
 
-func (w *Wage) TxBytesOpen() []byte {
-	return txBytes(&w, TBTxWageOpen)
+func (w *Wage) GetID() []byte {
+	return w.ID
 }
 
-func (w *Wage) TxBytesEdit() []byte {
-	return txBytes(&w, TBTxWageEdit)
+func (w *Wage) GetCtx() Context {
+	return w.Ctx
 }
 
 type Expense struct {
@@ -127,7 +123,7 @@ type Expense struct {
 	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewExpense(Sender, Receiver, DepositInfo, Notes string,
+func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
 	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
 
@@ -141,7 +137,7 @@ func NewExpense(Sender, Receiver, DepositInfo, Notes string,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
 		},
-		ID:             nil,
+		ID:             ID,
 		Document:       Document,
 		DocFileName:    DocFileName,
 		ExpenseTaxes:   ExpenseTaxes,
@@ -155,12 +151,12 @@ func (e *Expense) SetID() {
 	e.ID = append([]byte{TBIDExpense}, hashBytes...)
 }
 
-func (e *Expense) TxBytesOpen() []byte {
-	return txBytes(&e, TBTxExpenseOpen)
+func (e *Expense) GetID() []byte {
+	return e.ID
 }
 
-func (e *Expense) TxBytesEdit() []byte {
-	return txBytes(&e, TBTxExpenseEdit)
+func (e *Expense) GetCtx() Context {
+	return e.Ctx
 }
 
 type CloseInvoice struct {
@@ -179,5 +175,5 @@ func NewCloseInvoice(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime
 }
 
 func (c *CloseInvoice) TxBytes() []byte {
-	return txBytes(c, TBTxCloseInvoice)
+	return TxBytes(c, TBTxCloseInvoice)
 }
