@@ -37,10 +37,7 @@ func init() {
 	bcmd.RegisterTxSubcommand(CmdBond)
 	bcmd.RegisterStartPlugin("stake",
 		func() types.Plugin {
-			return stake.New(stake.Params{
-				UnbondingPeriod: 100,
-				TokenDenom:      "atom",
-			})
+			return stake.Plugin{UnbondingPeriod: 100}
 		},
 	)
 }
