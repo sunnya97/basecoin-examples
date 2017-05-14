@@ -15,7 +15,7 @@ const denomATOM = "atom"
 
 // Plugin is a proof-of-stake plugin for Basecoin
 type Plugin struct {
-	unbondingPeriod uint64 // how long unbonding takes (measured in blocks)
+	UnbondingPeriod uint64 // how long unbonding takes (measured in blocks)
 	height          uint64 // current block height
 }
 
@@ -28,7 +28,7 @@ func (sp Plugin) Name() string {
 func (sp Plugin) SetOption(store types.KVStore, key string, value string) (log string) {
 	if key == "unbondingPeriod" {
 		var err error
-		sp.unbondingPeriod, err = strconv.ParseUint(value, 10, 64)
+		sp.UnbondingPeriod, err = strconv.ParseUint(value, 10, 64)
 		if err != nil {
 			panic(fmt.Errorf("Could not parse int: '%s'", value))
 		}
@@ -97,7 +97,7 @@ func (sp Plugin) runUnbondTx(tx UnbondTx, store types.KVStore, ctx types.CallCon
 		ValidatorPubKey: tx.ValidatorPubKey,
 		Amount:          tx.Amount,
 		Address:         ctx.CallerAddress,
-		Height:          sp.height, // unbonds at `height + unbondingPeriod`
+		Height:          sp.height, // unbonds at `height + UnbondingPeriod`
 	})
 
 	saveState(store, state)
@@ -120,14 +120,14 @@ func (sp Plugin) InitChain(store types.KVStore, vals []*abci.Validator) {
 }
 
 // BeginBlock from ABCI
-func (sp *Plugin) BeginBlock(store types.KVStore, height uint64) {
-	sp.height = height
+func (sp Plugin) BeginBlock(store types.KVStore, hash []byte, header *abci.Header) {
+	sp.height = header.GetHeight()
 	state := loadState(store)
 
 	// Once collateral is done unbonding, pay out coins into
 	// basecoin accounts
 	unbonding := state.Unbonding
-	for len(unbonding) > 0 && height-unbonding[0].Height < sp.unbondingPeriod {
+	for len(unbonding) > 0 && sp.height-unbonding[0].Height < sp.UnbondingPeriod {
 		// remove first record from list
 		unbond := unbonding[0]
 		unbonding = unbonding[1:]
@@ -142,9 +142,9 @@ func (sp *Plugin) BeginBlock(store types.KVStore, height uint64) {
 }
 
 // EndBlock from ABCI
-func (sp *Plugin) EndBlock(store types.KVStore, height uint64) abci.Validators {
+func (sp Plugin) EndBlock(store types.KVStore, height uint64) abci.ResponseEndBlock {
 	sp.height = height + 1
-	return loadState(store).Collateral.Validators()
+	return abci.ResponseEndBlock{loadState(store).Collateral.Validators()}
 }
 
 func loadState(store types.KVStore) *State {
