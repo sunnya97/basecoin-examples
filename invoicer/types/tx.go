@@ -22,7 +22,6 @@ const (
 	TBTxExpenseEdit
 
 	TBTxCloseInvoice
-	TBTxBulkImport
 )
 
 func TxBytes(object interface{}, tb byte) []byte {

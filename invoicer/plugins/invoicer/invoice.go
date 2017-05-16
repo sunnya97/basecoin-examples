@@ -122,8 +122,3 @@ func runTxCloseInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []b
 
 	return abci.OK
 }
-
-//TODO add JSON imports
-func runTxBulkImport(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) (res abci.Result) {
-	return abci.OK //TODO add functionality
-}

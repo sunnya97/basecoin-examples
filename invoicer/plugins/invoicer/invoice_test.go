@@ -1,6 +1,8 @@
 package invoicer
 
 import (
+	"io/ioutil"
+	"path"
 	"testing"
 	"time"
 
@@ -10,9 +12,10 @@ import (
 )
 
 func TestRunInvoice(t *testing.T) {
+	require := require.New(t)
 
 	amt, err := types.ParseAmtCurTime("100BTC", time.Now())
-	require.Nil(t, err)
+	require.Nil(err)
 
 	var invoice types.Invoice
 
@@ -35,8 +38,22 @@ func TestRunInvoice(t *testing.T) {
 
 	//err = wire.ReadBinaryBytes(txBytes, invoiceRead)
 	err = wire.ReadBinaryBytes(txBytes[1:], invoiceRead)
-	require.Nil(t, err)
-	require.False(t, invoiceRead.Empty())
+	require.Nil(err)
+	require.False(invoiceRead.Empty())
 	_, ok := invoiceRead.Unwrap().(*types.Wage)
-	require.True(t, ok)
+	require.True(ok)
+}
+
+func TestReadWrite(t *testing.T) {
+	require := require.New(t)
+
+	imgPath := "/home/riger/Desktop/test.png"
+	_, filename := path.Split(imgPath)
+	savePath := path.Join("/home/riger/Desktop/rec", filename)
+
+	docBytes, err := ioutil.ReadFile(imgPath)
+	require.Nil(err)
+
+	err = ioutil.WriteFile(savePath, docBytes, 0644)
+	require.Nil(err)
 }

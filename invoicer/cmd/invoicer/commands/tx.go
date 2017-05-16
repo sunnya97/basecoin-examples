@@ -274,8 +274,8 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		if err != nil {
 			return errors.Wrap(err, "Problem reading receipt file")
 		}
-
 		_, filename := path.Split(viper.GetString(FlagReceipt))
+
 		invoice = types.NewExpense(
 			id,
 			sender,

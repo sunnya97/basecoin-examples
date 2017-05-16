@@ -62,8 +62,6 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 		return runTxInvoice(store, ctx, txBytes[1:], true)
 	case types.TBTxCloseInvoice:
 		return runTxCloseInvoice(store, ctx, txBytes[1:])
-	case types.TBTxBulkImport:
-		return runTxBulkImport(store, ctx, txBytes[1:])
 	default:
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: bad prepended bytes")
 	}
