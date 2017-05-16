@@ -14,9 +14,10 @@ var (
 	abciErrProfileNonExistent = abci.ErrUnknownRequest.AppendLog("Cannot modify a non-existent profile")
 	abciErrProfileExists      = abci.ErrInternalError.AppendLog("Cannot create an already existing profile")
 	abciErrDupInvoice         = abci.ErrInternalError.AppendLog("Duplicate invoice, edit the invoice notes to make them unique")
-	abciErrGetProfiles        = abci.ErrUnknownRequest.AppendLog("error retrieving active profile list")
-	abciErrGetInvoices        = abci.ErrUnknownRequest.AppendLog("error retrieving active invoice list")
-	abciErrInvoiceMissing     = abci.ErrUnknownRequest.AppendLog("error retrieving invoice to modify")
+	abciErrGetProfiles        = abci.ErrUnknownRequest.AppendLog("Error retrieving active profile list")
+	abciErrGetInvoices        = abci.ErrUnknownRequest.AppendLog("Error retrieving active invoice list")
+	abciErrInvoiceMissing     = abci.ErrUnknownRequest.AppendLog("Error retrieving invoice to modify")
+	abciErrInvoiceClosed      = abci.ErrUnauthorized.AppendLog("Cannot edit closed invoice")
 )
 
 func wrapErrDecodingState(err error) error {

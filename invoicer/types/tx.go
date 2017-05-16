@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/go-wire"
 	"github.com/tendermint/tmlibs/merkle"
 )
@@ -13,7 +14,7 @@ const (
 
 	TBTxProfileOpen
 	TBTxProfileEdit
-	TBTxProfileClose
+	TBTxProfileDeactivate
 
 	TBTxWageOpen
 	TBTxWageEdit
@@ -21,7 +22,7 @@ const (
 	TBTxExpenseOpen
 	TBTxExpenseEdit
 
-	TBTxCloseInvoice
+	TBTxCloseInvoices
 )
 
 func TxBytes(object interface{}, tb byte) []byte {
@@ -30,6 +31,7 @@ func TxBytes(object interface{}, tb byte) []byte {
 }
 
 type Profile struct {
+	Address         bcmd.Address  //identifier for querying
 	Name            string        //identifier for querying
 	AcceptedCur     string        //currency you will accept payment in
 	DepositInfo     string        //default deposit information (mostly for fiat)
@@ -37,9 +39,10 @@ type Profile struct {
 	Timezone        time.Location //default duration until a sent invoice due date
 }
 
-func NewProfile(Name string, AcceptedCur string, DepositInfo string,
+func NewProfile(Address bcmd.Address, Name, AcceptedCur, DepositInfo string,
 	DueDurationDays int, Timezone time.Location) *Profile {
 	return &Profile{
+		Address:         Address,
 		Name:            Name,
 		AcceptedCur:     AcceptedCur,
 		DepositInfo:     DepositInfo,
@@ -58,23 +61,18 @@ type InvoiceInner interface {
 	Close(close *CloseInvoice)
 }
 
-//var invoiceMapper = data.NewMapper(struct{ Invoice }{}).
-//RegisterImplementation(&Wage{}, "wage", 0x01).
-//RegisterImplementation(&Expense{}, "expense", 0x02)
-
 //for checking errors at compile time
-//var _ Invoice = new(Wage)
-//var _ Invoice = new(Expense)
+var _ InvoiceInner = new(Wage)
+var _ InvoiceInner = new(Expense)
 
 type Wage struct {
-	Ctx            Context
-	ID             []byte
-	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	ID  []byte
+	Ctx Context
 }
 
 //struct used for hash to determine ID
 type Context struct {
+	Open        bool
 	Sender      string
 	Receiver    string
 	DepositInfo string
@@ -88,7 +86,9 @@ func NewWage(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time) *Wage {
 
 	return &Wage{
+		ID: ID,
 		Ctx: Context{
+			Open:        true,
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
@@ -97,9 +97,6 @@ func NewWage(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
 		},
-		ID:             ID,
-		TransactionID:  "",
-		PaymentCurTime: nil,
 	}
 }
 
@@ -122,13 +119,11 @@ func (w *Wage) Close(close *CloseInvoice) {
 }
 
 type Expense struct {
-	Ctx            Context
-	ID             []byte
-	Document       []byte
-	DocFileName    string
-	ExpenseTaxes   *AmtCurTime
-	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	ID           []byte
+	Ctx          Context
+	Document     []byte
+	DocFileName  string
+	ExpenseTaxes *AmtCurTime
 }
 
 func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
@@ -136,7 +131,9 @@ func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
 
 	return &Expense{
+		ID: ID,
 		Ctx: Context{
+			Open:        true,
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
@@ -145,12 +142,9 @@ func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
 		},
-		ID:             ID,
-		Document:       Document,
-		DocFileName:    DocFileName,
-		ExpenseTaxes:   ExpenseTaxes,
-		TransactionID:  "",
-		PaymentCurTime: nil,
+		Document:     Document,
+		DocFileName:  DocFileName,
+		ExpenseTaxes: ExpenseTaxes,
 	}
 }
 
@@ -174,14 +168,14 @@ func (e *Expense) Close(close *CloseInvoice) {
 
 /////////////////////////////////////////////////////////////////////////
 
-type CloseInvoice struct {
-	ID             []byte
+type CloseInvoices struct {
+	IDs            [][]byte    //list of ID's to close with transaction
 	TransactionID  string      //empty when unpaid
 	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewCloseInvoice(ID []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoice {
-	return &CloseInvoice{
+func NewCloseInvoices(IDs []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoices {
+	return &CloseInvoices{
 		ID:             ID,
 		TransactionID:  TransactionID,
 		PaymentCurTime: PaymentCurTime,

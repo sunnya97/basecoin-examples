@@ -5,12 +5,13 @@ var (
 	FlagTo          string = "to"
 	FlagCur         string = "cur"
 	FlagDate        string = "date"
+	FlagDateRange   string = "date-range"
 	FlagDepositInfo string = "info"
 	FlagNotes       string = "notes"
+	FlagID          string = "id"
 
 	//query
 	FlagNum         string = "num"
-	FlagShort       string = "short"
 	FlagType        string = "type"
 	FlagFrom        string = "from"
 	FlagDownloadExp string = "download-expense"
@@ -28,5 +29,6 @@ var (
 	FlagTaxesPaid string = "taxes"
 
 	//close/edit flags
-	FlagTransactionID string = "id"
+	FlagTransactionID string = "trans"
+	FlagIDs           string = "ids"
 )

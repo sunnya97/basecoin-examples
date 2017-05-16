@@ -22,7 +22,7 @@ import (
 var (
 	//commands
 	QueryInvoiceCmd = &cobra.Command{
-		Use:   "invoice [HexID]",
+		Use:   "invoice [id]",
 		Short: "Query an invoice by ID",
 		RunE:  queryInvoiceCmd,
 	}
@@ -34,7 +34,7 @@ var (
 	}
 
 	QueryProfileCmd = &cobra.Command{
-		Use:   "profile [Name]",
+		Use:   "profile [name]",
 		Short: "Query a profile",
 		RunE:  queryProfileCmd,
 	}
@@ -44,37 +44,48 @@ var (
 		Short: "List all open profiles",
 		RunE:  queryProfilesCmd,
 	}
+
+	QueryPaymentsCmd = &cobra.Command{
+		Use:   "payments",
+		Short: "List historical payments",
+		RunE:  queryPaymentsCmd,
+	}
 )
 
 func init() {
 	//register flags
-	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fsDownload := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.String(FlagDownloadExp, "", "download expenses pdfs to the relative path specified")
 
-	QueryInvoiceCmd.Flags().AddFlagSet(fs)
+	fsMultiple := func(obj, searchModifiers string) *flag.FlagSet {
+		fs := flag.NewFlagSet("", flag.ContinueOnError)
+		fs.Int(FlagNum, 0, "number of results to display, use 0 for no limit")
+		fs.String(FlagType, "",
+			"limit the scope by using any of the following modifiers with commas: invoice,expense,paid,unpaid")
+		fs.String(FlagDateRange, "",
+			"Query within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
+		fs.String(FlagFrom, "", "Only query for "+obj+" from these addresses in the format <ADDR1>,<ADDR2>, etc.")
+		fs.String(FlagTo, "", "Only query for "+obj+" to these addresses in the format <ADDR1>,<ADDR2>, etc.")
+		return fs
+	}
 
-	fs.Int(FlagNum, 0, "number of results to display, use 0 for no limit")
-	fs.Bool(FlagShort, false, "output fields: paid, amount, date, sender, receiver")
-	fs.String(FlagType, "",
-		"limit the scope by using any of the following modifiers with commas: invoice,expense,paid,unpaid")
-	fs.String(FlagDate, "",
-		"Query within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
-	fs.String(FlagFrom, "", "only query for invoices from these addresses in the format <ADDR1>,<ADDR2>, etc.")
-	fs.String(FlagTo, "", "only query for invoices to these addresses in the format <ADDR1>,<ADDR2>, etc.")
-
-	QueryInvoicesCmd.Flags().AddFlagSet(fs)
+	QueryInvoiceCmd.Flags().AddFlagSet(fsDownload)
+	QueryInvoicesCmd.Flags().AddFlagSet(fsDownload)
+	QueryInvoicesCmd.Flags().AddFlagSet(fsMultiple("invoices", "invoice,expense,paid,unpaid"))
+	QueryPaymentsCmd.Flags().AddFlagSet(fsMultiple("payments", "invoice,expense"))
 
 	//register commands
 	bcmd.RegisterQuerySubcommand(QueryInvoicesCmd)
 	bcmd.RegisterQuerySubcommand(QueryInvoiceCmd)
 	bcmd.RegisterQuerySubcommand(QueryProfileCmd)
 	bcmd.RegisterQuerySubcommand(QueryProfilesCmd)
+	bcmd.RegisterQuerySubcommand(QueryPaymentsCmd)
 }
 
 func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 
 	if len(args) != 1 {
-		return errCmdReqArg("HexID")
+		return errCmdReqArg("id")
 	}
 	if !isHex(args[0]) {
 		return errBadHexID
@@ -103,7 +114,7 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 	if isExpense {
 		err = downloadExp(expense)
 		if err != nil {
-			return errors.Errorf("problem writing receipt file %v", err)
+			return errors.Errorf("Problem writing receipt file %v", err)
 		}
 	}
 
@@ -122,12 +133,15 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("No save invoices to return") //never stack trace
 	}
 
+	from := viper.GetString(FlagFrom)
+	froms := strings.Split(from, ",")
+
 	var invoices []types.Invoice
 	for _, id := range listInvoices {
 
 		invoice, err := queryInvoice(tmAddr, id)
 		if err != nil {
-			return errors.Errorf("bad invoice in active invoice list %v", err)
+			return errors.Errorf("Bad invoice in active invoice list %v", err)
 		}
 
 		wage, isWage := invoice.Unwrap().(*types.Wage)
@@ -145,8 +159,14 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		//continue if doesn't have the correct sender
-		from := viper.GetString(FlagFrom)
-		if len(from) > 0 && from != ctx.Sender {
+		cont := false
+		for _, from := range froms {
+			if from != ctx.Sender {
+				cont = true
+				break
+			}
+		}
+		if cont {
 			continue
 		}
 
@@ -193,9 +213,6 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	//TODO add short flag display functionality
-	//viper.GetString(FlagShort)
-
 	switch viper.GetString("output") {
 	case "text":
 		fmt.Println(string(wire.JSONBytes(invoices))) //TODO Actually make text
@@ -219,7 +236,7 @@ func downloadExp(expense *types.Expense) error {
 
 func queryProfileCmd(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return errCmdReqArg("Name")
+		return errCmdReqArg("name")
 	}
 
 	name := args[0]
@@ -255,6 +272,10 @@ func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 		fmt.Println(string(wire.JSONBytes(listProfiles)))
 	}
 	return nil
+}
+
+func queryPaymentsCmd(cmd *cobra.Command, args []string) error {
+	return nil //TODO build functionality
 }
 
 ///////////////////////////////////////////////////////////////////

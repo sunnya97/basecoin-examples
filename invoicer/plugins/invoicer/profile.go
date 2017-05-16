@@ -2,6 +2,7 @@ package invoicer
 
 import (
 	abci "github.com/tendermint/abci/types"
+	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	btypes "github.com/tendermint/basecoin/types"
 	wire "github.com/tendermint/go-wire"
 
@@ -33,7 +34,7 @@ func writeProfile(store btypes.KVStore, active []string, profile *types.Profile)
 func removeProfile(store btypes.KVStore, active []string, profile *types.Profile) {
 
 	//TODO remove profile, can't delete store entry on current KVstore implementation
-	store.Set(ProfileKey(profile.Name), nil)
+	store.Set(ProfileKey(name), nil)
 
 	//remove from the active profile list
 	for i, v := range active {
@@ -55,6 +56,15 @@ func profileIsActive(active []string, name string) bool {
 	return false
 }
 
+func nameFromAddress(store btypes.KVStore, active []string, address bcmd.Address) string {
+	for i, name := range active {
+		profile, _ := getProfile(store, name)
+		if profile.Address == address {
+			return profile.Name
+		}
+	}
+}
+
 func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, shouldExist bool,
 	action func(store btypes.KVStore, active []string, profile *types.Profile)) (res abci.Result) {
 
@@ -65,8 +75,13 @@ func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 		return abciErrDecodingTX(err)
 	}
 
-	//Check existence
+	//get the name from address, if not opening a new profile
 	active, err := getListProfile(store)
+	if len(profile.Name) == 0 {
+		profile.Name = nameFromAddress(store, active, profile.Address)
+	}
+
+	//Check existence
 	if err != nil {
 		return abciErrGetProfiles
 	}

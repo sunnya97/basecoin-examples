@@ -50,7 +50,7 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 		return runTxProfile(store, ctx, txBytes[1:], false, writeProfile)
 	case types.TBTxProfileEdit:
 		return runTxProfile(store, ctx, txBytes[1:], true, writeProfile)
-	case types.TBTxProfileClose:
+	case types.TBTxProfileDeactivate:
 		return runTxProfile(store, ctx, txBytes[1:], true, removeProfile)
 	case types.TBTxWageOpen:
 		return runTxInvoice(store, ctx, txBytes[1:], false)
@@ -60,7 +60,7 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 		return runTxInvoice(store, ctx, txBytes[1:], false)
 	case types.TBTxExpenseEdit:
 		return runTxInvoice(store, ctx, txBytes[1:], true)
-	case types.TBTxCloseInvoice:
+	case types.TBTxCloseInvoices:
 		return runTxCloseInvoice(store, ctx, txBytes[1:])
 	default:
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: bad prepended bytes")
