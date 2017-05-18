@@ -45,7 +45,7 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 		return res
 	}
 
-	invoices, err := getListInvoice(store)
+	invoices, err := getListBytes(store)
 	if err != nil {
 		return abciErrGetInvoices
 	}

@@ -5,8 +5,6 @@ import (
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	btypes "github.com/tendermint/basecoin/types"
 	wire "github.com/tendermint/go-wire"
-
-	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
 func validateProfile(profile *types.Profile) abci.Result {
@@ -76,15 +74,15 @@ func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 	}
 
 	//get the name from address, if not opening a new profile
-	active, err := getListProfile(store)
+	active, err := getListString(store)
+	if err != nil {
+		return abciErrGetProfiles
+	}
 	if len(profile.Name) == 0 {
 		profile.Name = nameFromAddress(store, active, profile.Address)
 	}
 
 	//Check existence
-	if err != nil {
-		return abciErrGetProfiles
-	}
 	if shouldExist && !profileIsActive(active, profile.Name) {
 		return abciErrProfileNonExistent
 	}

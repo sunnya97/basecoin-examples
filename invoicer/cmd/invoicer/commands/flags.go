@@ -12,6 +12,7 @@ var (
 
 	//query
 	FlagNum         string = "num"
+	FlagSum         string = "sum"
 	FlagType        string = "type"
 	FlagFrom        string = "from"
 	FlagDownloadExp string = "download-expense"

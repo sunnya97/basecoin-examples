@@ -8,17 +8,92 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/shopspring/decimal"
 )
 
-type CurTime struct {
+type CurrencyTime struct {
 	Cur  string
 	Date time.Time
 }
 
 type AmtCurTime struct {
-	Cur    CurTime
-	Amount string //Decimal Number
+	CurTime CurrencyTime
+	Amount  string //Decimal Number
 }
+
+func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Add(amt2)}, nil
+}
+
+func (a *AmtCurTime) Minus(a2 *AmtCurTime) (*AmtCurTime, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2)}, nil
+}
+
+func (a *AmtCurTime) GT(a2 *AmtCurTime) (bool, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return amt1.GreaterThan(amt2), nil
+}
+
+func (a *AmtCurTime) GTE(a2 *AmtCurTime) (bool, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return amt1.GreaterThanOrEqual(amt2), nil
+}
+
+func (a *AmtCurTime) LT(a2 *AmtCurTime) (bool, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return amt1.LessThan(amt2), nil
+}
+
+func (a *AmtCurTime) LTE(a2 *AmtCurTime) (bool, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return amt1.LessThanOrEaual(amt2), nil
+}
+
+func (a *AmtCurTime) validateOperation(a2 *AmtCurTime) error {
+	switch {
+	case a.Cur != a2.Cur:
+		return errors.New("Can't operate on two different currencies")
+	case a.Date != a2.Date:
+		return errors.New("Can't operate on two different dates")
+	}
+}
+
+func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 decimal.Decimal, err error) {
+	amt1, err := decimal.NewFromString(a.Amount)
+	if err != nil {
+		return false, err
+	}
+	amt2, err := decimal.NewFromString(a2.Amount)
+	if err != nil {
+		return false, err
+	}
+	err = a.ValidateOperation(a2)
+	if err != nil {
+		return false, err
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////
 
 func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 
@@ -31,7 +106,7 @@ func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 	amt := reAmt.FindString(amtCur)
 	cur := reCur.FindString(amtCur)
 
-	return &AmtCurTime{CurTime{cur, date}, amt}, nil
+	return &AmtCurTime{CurrencyTime{cur, date}, amt}, nil
 }
 
 func ParseDate(date string, timezone string) (t time.Time, err error) {

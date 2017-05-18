@@ -19,7 +19,7 @@ func TestRunInvoice(t *testing.T) {
 
 	var invoice types.Invoice
 
-	invoice = types.NewWage(
+	invoice = types.NewContract(
 		nil,
 		"foo", //from
 		"bar", //to
@@ -40,7 +40,7 @@ func TestRunInvoice(t *testing.T) {
 	err = wire.ReadBinaryBytes(txBytes[1:], invoiceRead)
 	require.Nil(err)
 	require.False(invoiceRead.Empty())
-	_, ok := invoiceRead.Unwrap().(*types.Wage)
+	_, ok := invoiceRead.Unwrap().(*types.Contract)
 	require.True(ok)
 }
 

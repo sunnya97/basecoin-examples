@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	"github.com/shopspring/decimal"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/go-wire"
 	"github.com/tendermint/tmlibs/merkle"
@@ -10,19 +11,19 @@ import (
 
 const (
 	TBIDExpense = iota
-	TBIDWage
+	TBIDContract
 
 	TBTxProfileOpen
 	TBTxProfileEdit
 	TBTxProfileDeactivate
 
-	TBTxWageOpen
-	TBTxWageEdit
+	TBTxContractOpen
+	TBTxContractEdit
 
 	TBTxExpenseOpen
 	TBTxExpenseEdit
 
-	TBTxCloseInvoices
+	TBTxPayment
 )
 
 func TxBytes(object interface{}, tb byte) []byte {
@@ -53,74 +54,96 @@ func NewProfile(Address bcmd.Address, Name, AcceptedCur, DepositInfo string,
 
 //////////////////////////////////////////////////////////////////////
 
-// +gen holder:"Invoice,Impl[*Wage,*Expense]"
+// +gen holder:"Invoice,Impl[*Contract,*Expense]"
 type InvoiceInner interface {
 	SetID()
 	GetID() []byte
-	GetCtx() Context
-	Close(close *CloseInvoice)
+	GetCtx() *Context
 }
 
 //for checking errors at compile time
-var _ InvoiceInner = new(Wage)
+var _ InvoiceInner = new(Contract)
 var _ InvoiceInner = new(Expense)
 
-type Wage struct {
+type Contract struct {
 	ID  []byte
-	Ctx Context
+	Ctx *Context
 }
 
 //struct used for hash to determine ID
 type Context struct {
-	Open        bool
 	Sender      string
 	Receiver    string
 	DepositInfo string
 	Notes       string
-	Amount      *AmtCurTime
 	AcceptedCur string
 	Due         time.Time
+
+	Open     bool        //Is this invoice open
+	Invoiced *AmtCurTime //Amount Invoiced (likely fiat)
+	Payable  *AmtCurTime //Payable Amount (likely crypto)
+	Paid     *AmtCurTime //Amount Paid towards this invoice
 }
 
-func NewWage(ID []byte, Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurTime, AcceptedCur string, Due time.Time) *Wage {
+func (c *Context) Unpaid() *AmtCurTime {
+	return c.Payable.Minus(Paid)
+}
 
-	return &Wage{
+//This function will make the maximum payment to the invoice from the fund
+//funds should be reduced from the the fund and returned throught the pointer
+func (c *Context) Pay(fund *AmtCurTime) error {
+	if fund.GTE(c.Payable) {
+		c.Paid = c.Payable
+		c.Open = false
+		fund = fund.Minus(c.Payable)
+	} else {
+		c.Paid = c.fund
+		fund = decimal.Zero
+	}
+}
+
+func NewContract(ID []byte, Sender, Receiver, DepositInfo, Notes string,
+	AcceptedCur string, Due time.Time, Amount *AmtCurTime) (contract *Contract, err error) {
+
+	payable, err := convertAmtCurTime(AcceptedCur, Amount)
+	if err != nil {
+		return contract, err
+	}
+
+	return &Contract{
 		ID: ID,
-		Ctx: Context{
-			Open:        true,
+		Ctx: &Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
 			Notes:       Notes,
-			Amount:      Amount,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
+
+			Open:     true,
+			Invoiced: Amount,
+			Payable:  payable,
+			Paid:     nil,
 		},
-	}
+	}, nil
 }
 
-func (w *Wage) SetID() {
+func (w *Contract) SetID() {
 	hashBytes := merkle.SimpleHashFromBinary(w.Ctx)
-	w.ID = append([]byte{TBIDWage}, hashBytes...)
+	w.ID = append([]byte{TBIDContract}, hashBytes...)
 }
 
-func (w *Wage) GetID() []byte {
+func (w *Contract) GetID() []byte {
 	return w.ID
 }
 
-func (w *Wage) GetCtx() Context {
+func (w *Contract) GetCtx() *Context {
 	return w.Ctx
-}
-
-func (w *Wage) Close(close *CloseInvoice) {
-	w.TransactionID = close.TransactionID
-	w.PaymentCurTime = close.PaymentCurTime
 }
 
 type Expense struct {
 	ID           []byte
-	Ctx          Context
+	Ctx          *Context
 	Document     []byte
 	DocFileName  string
 	ExpenseTaxes *AmtCurTime
@@ -130,17 +153,25 @@ func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
 	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
 
+	payable, err := convertAmtCurTime(AcceptedCur, Amount)
+	if err != nil {
+		return contract, err
+	}
+
 	return &Expense{
 		ID: ID,
-		Ctx: Context{
-			Open:        true,
+		Ctx: &Context{
 			Sender:      Sender,
 			Receiver:    Receiver,
 			DepositInfo: DepositInfo,
 			Notes:       Notes,
-			Amount:      Amount,
 			AcceptedCur: AcceptedCur,
 			Due:         Due,
+
+			Open:     true,
+			Invoiced: Amount,
+			Payable:  payable,
+			Paid:     nil,
 		},
 		Document:     Document,
 		DocFileName:  DocFileName,
@@ -157,26 +188,35 @@ func (e *Expense) GetID() []byte {
 	return e.ID
 }
 
-func (e *Expense) GetCtx() Context {
+func (e *Expense) GetCtx() *Context {
 	return e.Ctx
-}
-
-func (e *Expense) Close(close *CloseInvoice) {
-	e.TransactionID = close.TransactionID
-	e.PaymentCurTime = close.PaymentCurTime
 }
 
 /////////////////////////////////////////////////////////////////////////
 
-type CloseInvoices struct {
-	IDs            [][]byte    //list of ID's to close with transaction
+type Payment struct {
+	ID             []byte      //ID of this payment
+	InvoiceIDs     [][]byte    //list of ID's to close with transaction
 	TransactionID  string      //empty when unpaid
 	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
 }
 
-func NewCloseInvoices(IDs []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoices {
+func NewPayment(InvoiceIDs []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoices {
+	Ctx := struct {
+		InvoiceIDs     [][]byte    //list of ID's to close with transaction
+		TransactionID  string      //empty when unpaid
+		PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	}{
+		InvoiceIDs,
+		TransactionID,
+		PaymentCurTime,
+	}
+	hashBytes := merkle.SimpleHashFromBinary(Ctx)
+	ID := append([]byte{TBIDContract}, hashBytes...)
+
 	return &CloseInvoices{
 		ID:             ID,
+		InvoiceIDs:     InvoiceIDs,
 		TransactionID:  TransactionID,
 		PaymentCurTime: PaymentCurTime,
 	}

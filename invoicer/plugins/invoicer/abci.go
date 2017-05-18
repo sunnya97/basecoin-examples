@@ -4,8 +4,6 @@ import (
 	abci "github.com/tendermint/abci/types"
 	"github.com/tendermint/basecoin/state"
 	btypes "github.com/tendermint/basecoin/types"
-
-	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
 const Name = "invoicer"
@@ -52,16 +50,16 @@ func (inv *Invoicer) RunTx(store btypes.KVStore, ctx btypes.CallContext, txBytes
 		return runTxProfile(store, ctx, txBytes[1:], true, writeProfile)
 	case types.TBTxProfileDeactivate:
 		return runTxProfile(store, ctx, txBytes[1:], true, removeProfile)
-	case types.TBTxWageOpen:
+	case types.TBTxContractOpen:
 		return runTxInvoice(store, ctx, txBytes[1:], false)
-	case types.TBTxWageEdit:
+	case types.TBTxContractEdit:
 		return runTxInvoice(store, ctx, txBytes[1:], true)
 	case types.TBTxExpenseOpen:
 		return runTxInvoice(store, ctx, txBytes[1:], false)
 	case types.TBTxExpenseEdit:
 		return runTxInvoice(store, ctx, txBytes[1:], true)
-	case types.TBTxCloseInvoices:
-		return runTxCloseInvoice(store, ctx, txBytes[1:])
+	case types.TBTxPayment:
+		return runTxPayment(store, ctx, txBytes[1:])
 	default:
 		return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: bad prepended bytes")
 	}

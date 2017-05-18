@@ -3,6 +3,7 @@ package commands
 //TODO build pubkey section to the profiles
 
 import (
+	"bytes"
 	"encoding/hex"
 	"io/ioutil"
 	"path"
@@ -44,16 +45,16 @@ var (
 		RunE:  profileDeactivateCmd,
 	}
 
-	WageOpenCmd = &cobra.Command{
-		Use:   "wage-open [amount]",
-		Short: "Send a wage invoice of amount <value><currency>",
-		RunE:  wageOpenCmd,
+	ContractOpenCmd = &cobra.Command{
+		Use:   "contract-open [amount]",
+		Short: "Send a contract invoice of amount <value><currency>",
+		RunE:  contractOpenCmd,
 	}
 
-	WageEditCmd = &cobra.Command{
-		Use:   "wage-edit [amount]",
-		Short: "Edit an open wage invoice to amount <value><currency>",
-		RunE:  wageEditCmd,
+	ContractEditCmd = &cobra.Command{
+		Use:   "contract-edit [amount]",
+		Short: "Edit an open contract invoice to amount <value><currency>",
+		RunE:  contractEditCmd,
 	}
 
 	ExpenseOpenCmd = &cobra.Command{
@@ -86,11 +87,11 @@ func init() {
 	fsProfile.String(FlagTimezone, "UTC", "Timezone for invoice calculations")
 
 	fsInvoice := flag.NewFlagSet("", flag.ContinueOnError)
-	fsInvoice.String(FlagTo, "allinbits", "Name of the invoice/expense receiver")
+	fsInvoice.String(FlagTo, "allinbits", "Name of the invoice receiver")
 	fsInvoice.String(FlagDepositInfo, "", "Deposit information for invoice payment (default: profile)")
 	fsInvoice.String(FlagNotes, "", "Notes regarding the expense")
 	fsInvoice.String(FlagTimezone, "", "Invoice timezone (default: profile)")
-	fsInvoice.String(FlagCur, "btc", "Currency which invoice/expense should be paid in")
+	fsInvoice.String(FlagCur, "btc", "Currency which invoice should be paid in")
 	fsInvoice.String(FlagDueDate, "", "Invoice due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
 
 	fsExpense := flag.NewFlagSet("", flag.ContinueOnError)
@@ -103,7 +104,7 @@ func init() {
 	fsClose.String(FlagCur, "", "Payment amount in the format <decimal><currency> eg. 10.23usd")
 	fsClose.String(FlagDate, "", "Date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 	fsClose.String(FlagDateRange, "",
-		"Query within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
+		"Autoselect IDs within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
 
 	fsEdit := flag.NewFlagSet("", flag.ContinueOnError)
 	fsEdit.String(FlagID, "", "ID (hex) of the invoice to modify")
@@ -111,9 +112,9 @@ func init() {
 	ProfileOpenCmd.Flags().AddFlagSet(fsProfile)
 	ProfileEditCmd.Flags().AddFlagSet(fsProfile)
 
-	WageOpenCmd.Flags().AddFlagSet(fsInvoice)
-	WageEditCmd.Flags().AddFlagSet(fsInvoice)
-	WageEditCmd.Flags().AddFlagSet(fsEdit)
+	ContractOpenCmd.Flags().AddFlagSet(fsInvoice)
+	ContractEditCmd.Flags().AddFlagSet(fsInvoice)
+	ContractEditCmd.Flags().AddFlagSet(fsEdit)
 
 	ExpenseOpenCmd.Flags().AddFlagSet(fsInvoice)
 	ExpenseOpenCmd.Flags().AddFlagSet(fsExpense)
@@ -128,11 +129,11 @@ func init() {
 		ProfileOpenCmd,
 		ProfileEditCmd,
 		ProfileCloseCmd,
-		WageOpenCmd,
-		WageEditCmd,
+		ContractOpenCmd,
+		ContractEditCmd,
 		ExpenseOpenCmd,
 		ExpenseEditCmd,
-		CloseInvoicesCmd,
+		PaymentCmd,
 	)
 	bcmd.RegisterTxSubcommand(InvoicerCmd)
 }
@@ -159,8 +160,7 @@ func profileCmd(args []string, TxTB byte) error {
 		name = args[0]
 	}
 
-	keyPath := viper.GetString("from") //TODO update to proper basecoin key once integrated
-	address, err := bcmd.LoadKey(keyPath).Address
+	address, err := getAddress()
 	if err != nil {
 		return errors.Wrap(err, "Error loading address")
 	}
@@ -183,12 +183,17 @@ func profileCmd(args []string, TxTB byte) error {
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func wageOpenCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxWageOpen)
+func getAddress() (bcmd.Address, error) {
+	keyPath := viper.GetString("from") //TODO update to proper basecoin key once integrated
+	return bcmd.LoadKey(keyPath).Address
 }
 
-func wageEditCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxWageEdit)
+func contractOpenCmd(cmd *cobra.Command, args []string) error {
+	return invoiceCmd(cmd, args, types.TBTxContractOpen)
+}
+
+func contractEditCmd(cmd *cobra.Command, args []string) error {
+	return invoiceCmd(cmd, args, types.TBTxContractEdit)
 }
 
 func expenseOpenCmd(cmd *cobra.Command, args []string) error {
@@ -200,7 +205,7 @@ func expenseEditCmd(cmd *cobra.Command, args []string) error {
 }
 
 func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
-	if len(args) != 2 {
+	if len(args) != 1 {
 		return errCmdReqArg("amount<amt><cur>")
 	}
 	sender := args[0]
@@ -209,7 +214,7 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 	var id []byte = nil
 
 	//if editing
-	if txTB == types.TBTxWageEdit || //require this flag if
+	if txTB == types.TBTxContractEdit || //require this flag if
 		txTB == types.TBTxExpenseEdit { //require this flag if
 
 		//get the old id to remove if editing
@@ -224,13 +229,31 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		if err != nil {
 			return err
 		}
-
-		//only allow editing if the invoice is open
 	}
 
-	profile, err := queryProfile(cmd.Parent().Flag("node").Value.String(), sender)
+	//get the sender's address
+	address, err := getAddress()
+	if err != nil {
+		return errors.Wrap(err, "Error loading address")
+	}
+
+	//determine the senders profile TODO optimize
+	tmAddr := cmd.Parent().Flag("node").Value.String()
+	profiles, err := queryListProfile(tmAddr)
 	if err != nil {
 		return err
+	}
+	var profile *types.Profile
+	for _, name := range profiles {
+		p, err := queryProfile(tmAddr, name)
+		if err != nil {
+			return err
+		}
+		if bytes.Compare(p.Address, address) == 0 {
+			profile = p
+			break
+		}
+
 	}
 
 	date, err := types.ParseDate(viper.GetString(FlagDate), viper.GetString(FlagTimezone))
@@ -272,8 +295,8 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 
 	switch txTB {
 	//if not an expense then we're almost done!
-	case types.TBTxWageOpen, types.TBTxWageEdit:
-		invoice = types.NewWage(
+	case types.TBTxContractOpen, types.TBTxContractEdit:
+		invoice = types.NewContract(
 			id,
 			sender,
 			viper.GetString(FlagTo),
@@ -322,20 +345,30 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 
 func closeInvoicesCmd(cmd *cobra.Command, args []string) error {
 
-	//TODO add conflict checking for ids flag or date range
-	//TODO add conflict checking for ids flag or types
-	//TODO build get ids from date or types section
+	flagsIDs := viper.GetString(FlagIDs)
+	flagsDateRange := viper.GetString(FlagDateRange)
 
+	if len(flagIDs) > 0 && len(flagDateRange) > 0 {
+		return errors.New("Cannot use both the IDs flag and date-range flag")
+	}
+	if len(flagIDs) == 0 && len(flagDateRange) == 0 {
+		return errors.New("Must include an IDs flag or date-range flag")
+	}
+
+	//Get the list of ids either from date range or from the IDs flag
 	var ids [][]byte
-	idsStr := strings.Split(len(viper.GetString(FlagIDs)), ",")
-
-	for i, arg := range args {
-		if !isHex(arg) {
-			return errBadHexID
-		}
-		id, err := hex.DecodeString(StripHex(arg))
-		if err != nil {
-			return err
+	if len(flagDateRange) > 0 {
+		Ids = //TODO finish this code
+	} else {
+		idsStr := strings.Split(len(flagIDs), ",")
+		for i, arg := range args {
+			if !isHex(arg) {
+				return errBadHexID
+			}
+			id, err := hex.DecodeString(StripHex(arg))
+			if err != nil {
+				return err
+			}
 		}
 	}
 
