@@ -1,10 +1,12 @@
 package invoicer
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/shopspring/decimal"
 	abci "github.com/tendermint/abci/types"
+	types "github.com/tendermint/basecoin-examples/invoicer/types"
 	btypes "github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
 )
@@ -44,7 +46,7 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 		return abci.ErrInternalError.AppendLog("Closer must include a transaction ID")
 	}
 
-	//Get all invoices
+	//Get all invoices, verify the ID
 	var invoices []*types.Invoice
 	for _, invoiceID := range payment.InvoiceIDs {
 		invoice, err := getInvoice(store, payment.ID)
@@ -52,6 +54,13 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 			return abciErrInvoiceMissing
 		}
 		invoices = append(invoice, invoices...)
+		if invoice.Receiver != payment.Receiver {
+			return abci.ErrInternalError.AppendLog(
+				fmt.Sprintf("Invoice ID %x has receiver %v but the payment is to receiver %v!",
+					invoice.ID,
+					invoice.Receiver,
+					payment.Receiver))
+		}
 	}
 
 	//Make sure that the invoice is not paying too much!

@@ -32,23 +32,21 @@ func TxBytes(object interface{}, tb byte) []byte {
 }
 
 type Profile struct {
-	Address         bcmd.Address  //identifier for querying
-	Name            string        //identifier for querying
-	AcceptedCur     string        //currency you will accept payment in
-	DepositInfo     string        //default deposit information (mostly for fiat)
-	DueDurationDays int           //default duration until a sent invoice due date
-	Timezone        time.Location //default duration until a sent invoice due date
+	Address         bcmd.Address //identifier for querying
+	Name            string       //identifier for querying
+	AcceptedCur     string       //currency you will accept payment in
+	DepositInfo     string       //default deposit information (mostly for fiat)
+	DueDurationDays int          //default duration until a sent invoice due date
 }
 
 func NewProfile(Address bcmd.Address, Name, AcceptedCur, DepositInfo string,
-	DueDurationDays int, Timezone time.Location) *Profile {
+	DueDurationDays int) *Profile {
 	return &Profile{
 		Address:         Address,
 		Name:            Name,
 		AcceptedCur:     AcceptedCur,
 		DepositInfo:     DepositInfo,
 		DueDurationDays: DueDurationDays,
-		Timezone:        Timezone,
 	}
 }
 
@@ -197,17 +195,20 @@ func (e *Expense) GetCtx() *Context {
 type Payment struct {
 	ID             []byte      //ID of this payment
 	InvoiceIDs     [][]byte    //list of ID's to close with transaction
+	Receiver       string      //intended receiver ID of the payment
 	TransactionID  string      //empty when unpaid
 	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+	StartDate      *time.Time  //optional start date of payments to query for
+	EndDate        *time.Time  //optional end date of payments to query
 }
 
-func NewPayment(InvoiceIDs []byte, TransactionID string, PaymentCurTime *AmtCurTime) *CloseInvoices {
+func NewPayment(InvoiceIDs []byte, Receiver, TransactionID string, PaymentCurTime *AmtCurTime, StartDate, EndDate *time.Time) *CloseInvoices {
 	Ctx := struct {
-		InvoiceIDs     [][]byte    //list of ID's to close with transaction
-		TransactionID  string      //empty when unpaid
-		PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
+		Receiver       string
+		TransactionID  string
+		PaymentCurTime *AmtCurTime
 	}{
-		InvoiceIDs,
+		Receiver,
 		TransactionID,
 		PaymentCurTime,
 	}
@@ -219,5 +220,7 @@ func NewPayment(InvoiceIDs []byte, TransactionID string, PaymentCurTime *AmtCurT
 		InvoiceIDs:     InvoiceIDs,
 		TransactionID:  TransactionID,
 		PaymentCurTime: PaymentCurTime,
+		StartDate:      StartDate,
+		EndDate:        EndDate,
 	}
 }

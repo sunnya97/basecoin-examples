@@ -109,36 +109,23 @@ func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 	return &AmtCurTime{CurrencyTime{cur, date}, amt}, nil
 }
 
-func ParseDate(date string, timezone string) (t time.Time, err error) {
+func ParseDate(date string) (t time.Time, err error) {
 
 	//get the time of invoice
-	t = time.Now()
-	if len(timezone) > 0 {
-
-		tz := time.UTC
-		if len(timezone) > 0 {
-			tz, err = time.LoadLocation(timezone)
-			if err != nil {
-				return t, fmt.Errorf("error loading timezone, error: ", err) //never stack trace
-			}
+	str := strings.Split(date, "-")
+	var ymd = []int{}
+	for _, i := range str {
+		j, err := strconv.Atoi(i)
+		if err != nil {
+			return t, err
 		}
-
-		str := strings.Split(date, "-")
-		var ymd = []int{}
-		for _, i := range str {
-			j, err := strconv.Atoi(i)
-			if err != nil {
-				return t, err
-			}
-			ymd = append(ymd, j)
-		}
-		if len(ymd) != 3 {
-			return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
-		}
-
-		t = time.Date(ymd[0], time.Month(ymd[1]), ymd[2], 0, 0, 0, 0, tz)
-
+		ymd = append(ymd, j)
 	}
+	if len(ymd) != 3 {
+		return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
+	}
+
+	t = time.Date(ymd[0], time.Month(ymd[1]), ymd[2], 0, 0, 0, 0, time.UTC)
 
 	return t, nil
 }

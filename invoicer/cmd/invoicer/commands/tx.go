@@ -69,10 +69,10 @@ var (
 		RunE:  expenseEditCmd,
 	}
 
-	CloseInvoicesCmd = &cobra.Command{
-		Use:   "close-invoices",
-		Short: "Close invoices and expenses with transaction infomation",
-		RunE:  closeInvoicesCmd,
+	PaymentCmd = &cobra.Command{
+		Use:   "payment [receiver]",
+		Short: "pay invoices and expenses with transaction infomation",
+		RunE:  paymentCmd,
 	}
 )
 
@@ -84,26 +84,25 @@ func init() {
 	fsProfile.String(FlagCur, "BTC", "Payment curreny accepted")
 	fsProfile.String(FlagDepositInfo, "", "Default deposit information to be provided")
 	fsProfile.Int(FlagDueDurationDays, 14, "Default number of days until invoice is due from invoice submission")
-	fsProfile.String(FlagTimezone, "UTC", "Timezone for invoice calculations")
 
 	fsInvoice := flag.NewFlagSet("", flag.ContinueOnError)
 	fsInvoice.String(FlagTo, "allinbits", "Name of the invoice receiver")
 	fsInvoice.String(FlagDepositInfo, "", "Deposit information for invoice payment (default: profile)")
 	fsInvoice.String(FlagNotes, "", "Notes regarding the expense")
-	fsInvoice.String(FlagTimezone, "", "Invoice timezone (default: profile)")
 	fsInvoice.String(FlagCur, "btc", "Currency which invoice should be paid in")
+	fsInvoice.String(FlagDate, "", "Invoice demon date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 	fsInvoice.String(FlagDueDate, "", "Invoice due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
 
 	fsExpense := flag.NewFlagSet("", flag.ContinueOnError)
 	fsExpense.String(FlagReceipt, "", "Directory to receipt document file")
 	fsExpense.String(FlagTaxesPaid, "", "Taxes amount in the format <decimal><currency> eg. 10.23usd")
 
-	fsClose := flag.NewFlagSet("", flag.ContinueOnError)
-	fsClose.String(FlagIDs, "", "IDs to close during this transaction <id1>,<id2>,<id3>... ")
-	fsClose.String(FlagTransactionID, "", "Completed transaction ID")
-	fsClose.String(FlagCur, "", "Payment amount in the format <decimal><currency> eg. 10.23usd")
-	fsClose.String(FlagDate, "", "Date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
-	fsClose.String(FlagDateRange, "",
+	fsPayment := flag.NewFlagSet("", flag.ContinueOnError)
+	fsPayment.String(FlagIDs, "", "IDs to close during this transaction <id1>,<id2>,<id3>... ")
+	fsPayment.String(FlagTransactionID, "", "Completed transaction ID")
+	fsPayment.String(FlagAmount, "", "Payment amount in the format <decimal><currency> eg. 10.23usd")
+	fsPayment.String(FlagDate, "", "Date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
+	fsPayment.String(FlagDateRange, "",
 		"Autoselect IDs within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
 
 	fsEdit := flag.NewFlagSet("", flag.ContinueOnError)
@@ -122,7 +121,7 @@ func init() {
 	ExpenseEditCmd.Flags().AddFlagSet(fsExpense)
 	ExpenseEditCmd.Flags().AddFlagSet(fsEdit)
 
-	CloseInvoiceCmd.Flags().AddFlagSet(fsClose)
+	PaymentCmd.Flags().AddFlagSet(fsPayment)
 
 	//register commands
 	InvoicerCmd.AddCommand(
@@ -165,18 +164,12 @@ func profileCmd(args []string, TxTB byte) error {
 		return errors.Wrap(err, "Error loading address")
 	}
 
-	timezone, err := time.LoadLocation(viper.GetString(FlagTimezone))
-	if err != nil {
-		return errors.Wrap(err, "Error loading timezone")
-	}
-
 	profile := types.NewProfile(
 		address,
 		name,
 		viper.GetString(FlagCur),
 		viper.GetString(FlagDepositInfo),
 		viper.GetInt(FlagDueDurationDays),
-		*timezone,
 	)
 
 	txBytes := types.TxBytes(*profile, TxTB)
@@ -237,7 +230,7 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		return errors.Wrap(err, "Error loading address")
 	}
 
-	//determine the senders profile TODO optimize
+	//determine the senders profile TODO optimize, move to the ABCI app
 	tmAddr := cmd.Parent().Flag("node").Value.String()
 	profiles, err := queryListProfile(tmAddr)
 	if err != nil {
@@ -256,9 +249,13 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 
 	}
 
-	date, err := types.ParseDate(viper.GetString(FlagDate), viper.GetString(FlagTimezone))
-	if err != nil {
-		return err
+	dateStr := viper.GetString(FlagDate)
+	date := time.Now()
+	if len(dateStr) > 0 {
+		date, err := types.ParseDate(dateStr)
+		if err != nil {
+			return err
+		}
 	}
 	amt, err := types.ParseAmtCurTime(amountStr, date)
 	if err != nil {
@@ -269,7 +266,7 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 
 	var dueDate time.Time
 	if len(viper.GetString(FlagDueDate)) > 0 {
-		dueDate, err = types.ParseDate(viper.GetString(FlagDueDate), viper.GetString(FlagTimezone))
+		dueDate, err = types.ParseDate(viper.GetString(FlagDueDate))
 		if err != nil {
 			return err
 		}
@@ -343,7 +340,13 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func closeInvoicesCmd(cmd *cobra.Command, args []string) error {
+func paymentCmd(cmd *cobra.Command, args []string) error {
+
+	var receiver string
+	if len(args) != 1 {
+		return errCmdReqArg("receiver")
+	}
+	receiver = args[0]
 
 	flagsIDs := viper.GetString(FlagIDs)
 	flagsDateRange := viper.GetString(FlagDateRange)
@@ -355,10 +358,27 @@ func closeInvoicesCmd(cmd *cobra.Command, args []string) error {
 		return errors.New("Must include an IDs flag or date-range flag")
 	}
 
-	//Get the list of ids either from date range or from the IDs flag
+	//Get the date range or list of IDs
 	var ids [][]byte
+	var startDate, endDate *time.Time = nil, nil
 	if len(flagDateRange) > 0 {
-		Ids = //TODO finish this code
+		dates := strings.Split(flagDateRange)
+		parseDate := func(date string) (time.Time, error) {
+			if len(date) == 0 {
+				return nil, nil
+			} else {
+				return types.ParseDate(dates[0])
+			}
+		}
+		var err error
+		startDate, err = parseDate(dates[0])
+		if err != nil {
+			return err
+		}
+		endDate, err = parseDate(dates[1])
+		if err != nil {
+			return err
+		}
 	} else {
 		idsStr := strings.Split(len(flagIDs), ",")
 		for i, arg := range args {
@@ -372,21 +392,24 @@ func closeInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	date, err := types.ParseDate(viper.GetString(FlagDate), viper.GetString(FlagTimezone))
+	date, err := types.ParseDate(viper.GetString(FlagDate))
 	if err != nil {
 		return err
 	}
-	act, err := types.ParseAmtCurTime(viper.GetString(FlagCur), date)
+	amt, err := types.ParseAmtCurTime(viper.GetString(FlagAmount), date)
 	if err != nil {
 		return err
 	}
 
-	closeInvoices := types.NewCloseInvoices(
-		id,
+	payment := types.NewPayment(
+		ids,
+		receiver,
 		viper.GetString(FlagTransactionID),
-		act,
+		amt,
+		startDate,
+		endDate,
 	)
 	//txBytes := closeInvoice.TxBytes()
-	txBytes := types.TxBytes(*closeInvoices, types.TBTxCloseInvoices)
+	txBytes := types.TxBytes(*payment, types.TBTxCloseInvoices)
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }

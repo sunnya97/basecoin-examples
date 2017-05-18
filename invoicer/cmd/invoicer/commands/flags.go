@@ -9,6 +9,7 @@ var (
 	FlagDepositInfo string = "info"
 	FlagNotes       string = "notes"
 	FlagID          string = "id"
+	FlagIDs         string = "ids"
 
 	//query
 	FlagNum         string = "num"
@@ -20,7 +21,6 @@ var (
 	//transaction
 	//profile flags
 	FlagDueDurationDays string = "due-days"
-	FlagTimezone        string = "timezone"
 
 	//invoice flags
 	FlagDueDate string = "due-date"
@@ -29,7 +29,7 @@ var (
 	FlagReceipt   string = "receipt"
 	FlagTaxesPaid string = "taxes"
 
-	//close/edit flags
-	FlagTransactionID string = "trans"
-	FlagIDs           string = "ids"
+	//payment flags
+	FlagTransactionID string = "tx-id"
+	FlagAmount        string = "amount"
 )
