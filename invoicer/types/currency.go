@@ -24,17 +24,17 @@ type AmtCurTime struct {
 func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
 	amt1, amt2, err := getDecimals(a, a2)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Add(amt2)}, nil
+	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Add(amt2).String()}, nil
 }
 
 func (a *AmtCurTime) Minus(a2 *AmtCurTime) (*AmtCurTime, error) {
 	amt1, amt2, err := getDecimals(a, a2)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2)}, nil
+	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2).String()}, nil
 }
 
 func (a *AmtCurTime) GT(a2 *AmtCurTime) (bool, error) {
@@ -66,31 +66,30 @@ func (a *AmtCurTime) LTE(a2 *AmtCurTime) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return amt1.LessThanOrEaual(amt2), nil
+	return amt1.LessThanOrEqual(amt2), nil
 }
 
 func (a *AmtCurTime) validateOperation(a2 *AmtCurTime) error {
 	switch {
-	case a.Cur != a2.Cur:
+	case a.CurTime.Cur != a2.CurTime.Cur:
 		return errors.New("Can't operate on two different currencies")
-	case a.Date != a2.Date:
+	case a.CurTime.Date != a2.CurTime.Date:
 		return errors.New("Can't operate on two different dates")
 	}
+	return nil
 }
 
 func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 decimal.Decimal, err error) {
-	amt1, err := decimal.NewFromString(a.Amount)
+	amt1, err = decimal.NewFromString(a1.Amount)
 	if err != nil {
-		return false, err
+		return
 	}
-	amt2, err := decimal.NewFromString(a2.Amount)
+	amt2, err = decimal.NewFromString(a2.Amount)
 	if err != nil {
-		return false, err
+		return
 	}
-	err = a.ValidateOperation(a2)
-	if err != nil {
-		return false, err
-	}
+	err = a1.validateOperation(a2)
+	return
 }
 
 ///////////////////////////////////////////////////////////////////////////

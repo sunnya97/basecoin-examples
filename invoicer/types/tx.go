@@ -3,7 +3,6 @@ package types
 import (
 	"time"
 
-	"github.com/shopspring/decimal"
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/go-wire"
 	"github.com/tendermint/tmlibs/merkle"
@@ -83,21 +82,29 @@ type Context struct {
 	Paid     *AmtCurTime //Amount Paid towards this invoice
 }
 
-func (c *Context) Unpaid() *AmtCurTime {
-	return c.Payable.Minus(Paid)
+func (c *Context) Unpaid() (*AmtCurTime, error) {
+	return c.Payable.Minus(c.Paid)
 }
 
 //This function will make the maximum payment to the invoice from the fund
 //funds should be reduced from the the fund and returned throught the pointer
 func (c *Context) Pay(fund *AmtCurTime) error {
-	if fund.GTE(c.Payable) {
+	gte, err := fund.GTE(c.Payable)
+	if err != nil {
+		return err
+	}
+	if gte {
 		c.Paid = c.Payable
 		c.Open = false
-		fund = fund.Minus(c.Payable)
+		fund, err = fund.Minus(c.Payable)
+		if err != nil {
+			return err
+		}
 	} else {
-		c.Paid = c.fund
-		fund = decimal.Zero
+		c.Paid = fund
+		fund.Amount = "0" //empty the fund
 	}
+	return nil
 }
 
 func NewContract(ID []byte, Sender, Receiver, DepositInfo, Notes string,
@@ -149,11 +156,11 @@ type Expense struct {
 
 func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
-	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
+	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) (*Expense, error) {
 
 	payable, err := convertAmtCurTime(AcceptedCur, Amount)
 	if err != nil {
-		return contract, err
+		return nil, err
 	}
 
 	return &Expense{
@@ -174,7 +181,7 @@ func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 		Document:     Document,
 		DocFileName:  DocFileName,
 		ExpenseTaxes: ExpenseTaxes,
-	}
+	}, nil
 }
 
 func (e *Expense) SetID() {
@@ -202,7 +209,7 @@ type Payment struct {
 	EndDate        *time.Time  //optional end date of payments to query
 }
 
-func NewPayment(InvoiceIDs []byte, Receiver, TransactionID string, PaymentCurTime *AmtCurTime, StartDate, EndDate *time.Time) *CloseInvoices {
+func NewPayment(InvoiceIDs [][]byte, Receiver, TransactionID string, PaymentCurTime *AmtCurTime, StartDate, EndDate *time.Time) *Payment {
 	Ctx := struct {
 		Receiver       string
 		TransactionID  string
@@ -215,7 +222,7 @@ func NewPayment(InvoiceIDs []byte, Receiver, TransactionID string, PaymentCurTim
 	hashBytes := merkle.SimpleHashFromBinary(Ctx)
 	ID := append([]byte{TBIDContract}, hashBytes...)
 
-	return &CloseInvoices{
+	return &Payment{
 		ID:             ID,
 		InvoiceIDs:     InvoiceIDs,
 		TransactionID:  TransactionID,

@@ -28,5 +28,11 @@ func wrapErrDecodingState(err error) error {
 }
 
 func abciErrDecodingTX(err error) abci.Result {
+	//TODO check for stack tracing/implement
 	return abci.ErrBaseEncodingError.AppendLog("Error decoding tx: " + err.Error())
+}
+
+func abciErrDecimal(err error) abci.Result {
+	//TODO check for stack tracing/implement
+	return abci.ErrBaseEncodingError.AppendLog("Error in decimal calculation: " + err.Error())
 }

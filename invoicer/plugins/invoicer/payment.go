@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shopspring/decimal"
 	abci "github.com/tendermint/abci/types"
 	types "github.com/tendermint/basecoin-examples/invoicer/types"
 	btypes "github.com/tendermint/basecoin/types"
@@ -20,7 +19,7 @@ func validatePayment(ctx types.Context) abci.Result {
 		return abci.ErrInternalError.AppendLog("Invoice must have a receiver")
 	case len(ctx.AcceptedCur) == 0:
 		return abci.ErrInternalError.AppendLog("Invoice must have an accepted currency")
-	case ctx.Amount == nil:
+	case ctx.Payable == nil:
 		return abci.ErrInternalError.AppendLog("Invoice amount is nil")
 	case ctx.Due.Before(time.Now()):
 		return abci.ErrInternalError.AppendLog("Cannot issue overdue invoice")
@@ -40,9 +39,9 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 
 	//Validate Tx
 	switch {
-	case len(close.IDs) == 0:
+	case len(payment.InvoiceIDs) == 0:
 		return abci.ErrInternalError.AppendLog("Closer doesn't contain any IDs to close!")
-	case len(close.TransactionID) == 0:
+	case len(payment.TransactionID) == 0:
 		return abci.ErrInternalError.AppendLog("Closer must include a transaction ID")
 	}
 
@@ -64,11 +63,22 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	}
 
 	//Make sure that the invoice is not paying too much!
-	var totalCost decimal.Decimal
+	var totalCost *types.AmtCurTime
 	for _, invoice := range invoices {
-		totalCost = totalCost.Add(invoice.Unpaid)
+		unpaid, err := invoice.GetCtx().Unpaid()
+		if err != nil {
+			return abciErrDecimal(err)
+		}
+		totalCost, err = totalCost.Add(unpaid)
+		if err != nil {
+			return abciErrDecimal(err)
+		}
 	}
-	if payment.PaymentCurTime.GT(totalCost) {
+	gt, err := payment.PaymentCurTime.GT(totalCost)
+	if err != nil {
+		return abciErrDecimal(err)
+	}
+	if gt {
 		return abciErrOverPayment
 	}
 
@@ -77,7 +87,7 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	for i, invoiceID := range payment.InvoiceIDs {
 
 		//get the invoice
-		invoice, err := getInvoice(store, close.ID)
+		invoice, err := getInvoice(store, payment.ID)
 		if err != nil {
 			return abciErrInvoiceMissing
 		}

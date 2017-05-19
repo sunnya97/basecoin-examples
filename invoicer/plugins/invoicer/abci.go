@@ -4,6 +4,8 @@ import (
 	abci "github.com/tendermint/abci/types"
 	"github.com/tendermint/basecoin/state"
 	btypes "github.com/tendermint/basecoin/types"
+
+	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
 const Name = "invoicer"

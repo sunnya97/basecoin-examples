@@ -1,4 +1,4 @@
-package invoicer
+package types
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func convertAmtCurTime(denomOut string, in *types.AmtCurTime) (out *types.AmtCurTime, err error) {
+func convertAmtCurTime(denomOut string, in *AmtCurTime) (out *AmtCurTime, err error) {
 
 	inDec, err := decimal.NewFromString(in.Amount)
 	if err != nil {
@@ -30,13 +30,8 @@ func convert(denomIn, denomOut string, amt decimal.Decimal, date time.Time) (out
 	urlFiat2USD := fmt.Sprintf("http://api.fixer.io/%v?base=USD", dateStr)
 	urlUSD2BTC := fmt.Sprintf("http://api.coindesk.com/v1/bpi/historical/close.json?start=%v&end=%v", dateStr, dateStr)
 
-	//init decimal values
-	conv, err := decimal.NewFromString("1")
-	if err != nil {
-		return out, err
-	}
-
 	//calculate the conversion factor
+	conv := decimal.New(1, 1)
 	if denomIn != "USD" {
 		multiplier, err := getConv(urlFiat2USD, "rates", denomIn)
 		if err != nil {

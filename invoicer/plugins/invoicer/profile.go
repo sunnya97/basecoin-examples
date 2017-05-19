@@ -5,6 +5,8 @@ import (
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	btypes "github.com/tendermint/basecoin/types"
 	wire "github.com/tendermint/go-wire"
+
+	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
 func validateProfile(profile *types.Profile) abci.Result {
@@ -32,7 +34,7 @@ func writeProfile(store btypes.KVStore, active []string, profile *types.Profile)
 func removeProfile(store btypes.KVStore, active []string, profile *types.Profile) {
 
 	//TODO remove profile, can't delete store entry on current KVstore implementation
-	store.Set(ProfileKey(name), nil)
+	store.Set(ProfileKey(profile.Name), nil)
 
 	//remove from the active profile list
 	for i, v := range active {

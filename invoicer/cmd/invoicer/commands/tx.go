@@ -1,7 +1,5 @@
 package commands
 
-//TODO build pubkey section to the profiles
-
 import (
 	"bytes"
 	"encoding/hex"

@@ -11,7 +11,7 @@ import (
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
 
-func validateInvoiceCtx(ctx types.Context) abci.Result {
+func validateInvoiceCtx(ctx *types.Context) abci.Result {
 	//Validate Tx
 	switch {
 	case len(ctx.Sender) == 0:
@@ -20,7 +20,7 @@ func validateInvoiceCtx(ctx types.Context) abci.Result {
 		return abci.ErrInternalError.AppendLog("invoice must have a receiver")
 	case len(ctx.AcceptedCur) == 0:
 		return abci.ErrInternalError.AppendLog("invoice must have an accepted currency")
-	case ctx.Amount == nil:
+	case ctx.Payable == nil:
 		return abci.ErrInternalError.AppendLog("invoice amount is nil")
 	case ctx.Due.Before(time.Now()):
 		return abci.ErrInternalError.AppendLog("cannot issue overdue invoice")
@@ -45,7 +45,7 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 		return res
 	}
 
-	invoices, err := getListBytes(store)
+	invoices, err := getListBytes(store, ListInvoiceKey())
 	if err != nil {
 		return abciErrGetInvoices
 	}
@@ -58,7 +58,10 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 			if bytes.Compare(v, invoice.GetID()) == 0 {
 
 				//Can only edit if the current invoice is still open
-				storeInvoice := getInvoice(store, v)
+				storeInvoice, err := getInvoice(store, v)
+				if err != nil {
+					return abciErrInvoiceClosed
+				}
 				if !storeInvoice.Open {
 					return abciErrInvoiceClosed
 				}
