@@ -11,18 +11,7 @@ import (
 const (
 	TBIDExpense = iota
 	TBIDContract
-
-	TBTxProfileOpen
-	TBTxProfileEdit
-	TBTxProfileDeactivate
-
-	TBTxContractOpen
-	TBTxContractEdit
-
-	TBTxExpenseOpen
-	TBTxExpenseEdit
-
-	TBTxPayment
+	TBIDPayment
 )
 
 func TxBytes(object interface{}, tb byte) []byte {
@@ -36,6 +25,7 @@ type Profile struct {
 	AcceptedCur     string       //currency you will accept payment in
 	DepositInfo     string       //default deposit information (mostly for fiat)
 	DueDurationDays int          //default duration until a sent invoice due date
+	Active          bool         //default duration until a sent invoice due date
 }
 
 func NewProfile(Address bcmd.Address, Name, AcceptedCur, DepositInfo string,
@@ -46,6 +36,7 @@ func NewProfile(Address bcmd.Address, Name, AcceptedCur, DepositInfo string,
 		AcceptedCur:     AcceptedCur,
 		DepositInfo:     DepositInfo,
 		DueDurationDays: DueDurationDays,
+		Active:          true,
 	}
 }
 
@@ -108,12 +99,7 @@ func (c *Context) Pay(fund *AmtCurTime) error {
 }
 
 func NewContract(ID []byte, Sender, Receiver, DepositInfo, Notes string,
-	AcceptedCur string, Due time.Time, Amount *AmtCurTime) (contract *Contract, err error) {
-
-	payable, err := convertAmtCurTime(AcceptedCur, Amount)
-	if err != nil {
-		return contract, err
-	}
+	AcceptedCur string, Due time.Time, Amount, Payable *AmtCurTime) *Contract {
 
 	return &Contract{
 		ID: ID,
@@ -127,10 +113,10 @@ func NewContract(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 
 			Open:     true,
 			Invoiced: Amount,
-			Payable:  payable,
+			Payable:  Payable,
 			Paid:     nil,
 		},
-	}, nil
+	}
 }
 
 func (w *Contract) SetID() {
@@ -155,13 +141,8 @@ type Expense struct {
 }
 
 func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
-	Amount *AmtCurTime, AcceptedCur string, Due time.Time,
-	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) (*Expense, error) {
-
-	payable, err := convertAmtCurTime(AcceptedCur, Amount)
-	if err != nil {
-		return nil, err
-	}
+	AcceptedCur string, Due time.Time, Amount, Payable *AmtCurTime,
+	Document []byte, DocFileName string, ExpenseTaxes *AmtCurTime) *Expense {
 
 	return &Expense{
 		ID: ID,
@@ -175,13 +156,13 @@ func NewExpense(ID []byte, Sender, Receiver, DepositInfo, Notes string,
 
 			Open:     true,
 			Invoiced: Amount,
-			Payable:  payable,
+			Payable:  Payable,
 			Paid:     nil,
 		},
 		Document:     Document,
 		DocFileName:  DocFileName,
 		ExpenseTaxes: ExpenseTaxes,
-	}, nil
+	}
 }
 
 func (e *Expense) SetID() {
@@ -220,7 +201,7 @@ func NewPayment(InvoiceIDs [][]byte, Receiver, TransactionID string, PaymentCurT
 		PaymentCurTime,
 	}
 	hashBytes := merkle.SimpleHashFromBinary(Ctx)
-	ID := append([]byte{TBIDContract}, hashBytes...)
+	ID := append([]byte{TBIDPayment}, hashBytes...)
 
 	return &Payment{
 		ID:             ID,

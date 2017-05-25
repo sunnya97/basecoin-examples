@@ -62,7 +62,7 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 				if err != nil {
 					return abciErrInvoiceClosed
 				}
-				if !storeInvoice.Open {
+				if !storeInvoice.GetCtx().Open {
 					return abciErrInvoiceClosed
 				}
 

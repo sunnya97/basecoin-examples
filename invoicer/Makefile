@@ -4,7 +4,7 @@ PACKAGES=$(shell go list ./... | grep -v '/vendor/')
 all: get_vendor_deps test install
 
 test:
-	bash test/test.sh
+	bash cmd/invoicer/test/test.sh
 	@go test $(PACKAGES)
 
 install:

@@ -13,9 +13,11 @@ import (
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	bcmd "github.com/tendermint/basecoin/cmd/commands"
+
+	"github.com/tendermint/basecoin-examples/invoicer/common"
 	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	"github.com/tendermint/basecoin-examples/invoicer/types"
-	bcmd "github.com/tendermint/basecoin/cmd/commands"
 )
 
 var (
@@ -125,7 +127,7 @@ func init() {
 	InvoicerCmd.AddCommand(
 		ProfileOpenCmd,
 		ProfileEditCmd,
-		ProfileCloseCmd,
+		ProfileDeactivateCmd,
 		ContractOpenCmd,
 		ContractEditCmd,
 		ExpenseOpenCmd,
@@ -136,21 +138,21 @@ func init() {
 }
 
 func profileOpenCmd(cmd *cobra.Command, args []string) error {
-	return profileCmd(args, types.TBTxProfileOpen)
+	return profileCmd(args, invoicer.TBTxProfileOpen)
 }
 
 func profileEditCmd(cmd *cobra.Command, args []string) error {
-	return profileCmd(args, types.TBTxProfileEdit)
+	return profileCmd(args, invoicer.TBTxProfileEdit)
 }
 
 func profileDeactivateCmd(cmd *cobra.Command, args []string) error {
-	return profileCmd(args, types.TBTxProfileClose)
+	return profileCmd(args, invoicer.TBTxProfileDeactivate)
 }
 
-func profileCmd(args []string, TxTB byte) error {
+func profileCmd(args []string, TBTx byte) error {
 
 	var name string
-	if TxTB == types.TBTxProfileOpen {
+	if TBTx == invoicer.TBTxProfileOpen {
 		if len(args) != 1 {
 			return errCmdReqArg("name")
 		}
@@ -170,32 +172,36 @@ func profileCmd(args []string, TxTB byte) error {
 		viper.GetInt(FlagDueDurationDays),
 	)
 
-	txBytes := types.TxBytes(*profile, TxTB)
+	txBytes := types.TxBytes(*profile, TBTx)
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }
 
-func getAddress() (bcmd.Address, error) {
+func getAddress() (addr bcmd.Address, err error) {
 	keyPath := viper.GetString("from") //TODO update to proper basecoin key once integrated
-	return bcmd.LoadKey(keyPath).Address
+	key, err := bcmd.LoadKey(keyPath)
+	if key == nil {
+		return
+	}
+	return key.Address, err
 }
 
 func contractOpenCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxContractOpen)
+	return invoiceCmd(cmd, args, invoicer.TBTxContractOpen)
 }
 
 func contractEditCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxContractEdit)
+	return invoiceCmd(cmd, args, invoicer.TBTxContractEdit)
 }
 
 func expenseOpenCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxExpenseOpen)
+	return invoiceCmd(cmd, args, invoicer.TBTxExpenseOpen)
 }
 
 func expenseEditCmd(cmd *cobra.Command, args []string) error {
-	return invoiceCmd(cmd, args, types.TBTxExpenseEdit)
+	return invoiceCmd(cmd, args, invoicer.TBTxExpenseEdit)
 }
 
-func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
+func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 	if len(args) != 1 {
 		return errCmdReqArg("amount<amt><cur>")
 	}
@@ -205,8 +211,8 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 	var id []byte = nil
 
 	//if editing
-	if txTB == types.TBTxContractEdit || //require this flag if
-		txTB == types.TBTxExpenseEdit { //require this flag if
+	if txTB == invoicer.TBTxContractEdit || //require this flag if
+		txTB == invoicer.TBTxExpenseEdit { //require this flag if
 
 		//get the old id to remove if editing
 		idRaw := viper.GetString(FlagTransactionID)
@@ -230,7 +236,7 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 
 	//determine the senders profile TODO optimize, move to the ABCI app
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	profiles, err := queryListProfile(tmAddr)
+	profiles, err := queryListString(tmAddr, invoicer.ListProfileKey())
 	if err != nil {
 		return err
 	}
@@ -240,17 +246,24 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		if err != nil {
 			return err
 		}
-		if bytes.Compare(p.Address, address) == 0 {
-			profile = p
+		if bytes.Compare(p.Address[:], address[:]) == 0 {
+			profile = &p
 			break
 		}
 
 	}
 
+	var accCur string
+	if len(viper.GetString(FlagCur)) > 0 {
+		accCur = viper.GetString(FlagCur)
+	} else {
+		accCur = profile.AcceptedCur
+	}
+
 	dateStr := viper.GetString(FlagDate)
 	date := time.Now()
 	if len(dateStr) > 0 {
-		date, err := types.ParseDate(dateStr)
+		date, err = common.ParseDate(dateStr)
 		if err != nil {
 			return err
 		}
@@ -260,11 +273,17 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		return err
 	}
 
+	//calculate payable amount based on invoiced and accepted cur
+	payable, err := common.ConvertAmtCurTime(accCur, amt)
+	if err != nil {
+		return err
+	}
+
 	//retrieve flags, or if they aren't used, use the senders profile's default
 
 	var dueDate time.Time
 	if len(viper.GetString(FlagDueDate)) > 0 {
-		dueDate, err = types.ParseDate(viper.GetString(FlagDueDate))
+		dueDate, err = common.ParseDate(viper.GetString(FlagDueDate))
 		if err != nil {
 			return err
 		}
@@ -279,29 +298,23 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 		depositInfo = profile.DepositInfo
 	}
 
-	var accCur string
-	if len(viper.GetString(FlagCur)) > 0 {
-		accCur = viper.GetString(FlagCur)
-	} else {
-		accCur = profile.AcceptedCur
-	}
-
 	var invoice types.Invoice
 
 	switch txTB {
 	//if not an expense then we're almost done!
-	case types.TBTxContractOpen, types.TBTxContractEdit:
+	case invoicer.TBTxContractOpen, invoicer.TBTxContractEdit:
 		invoice = types.NewContract(
 			id,
 			sender,
 			viper.GetString(FlagTo),
 			depositInfo,
 			viper.GetString(FlagNotes),
-			amt,
 			accCur,
 			dueDate,
+			amt,
+			payable,
 		).Wrap()
-	case types.TBTxExpenseOpen, types.TBTxExpenseEdit:
+	case invoicer.TBTxExpenseOpen, invoicer.TBTxExpenseEdit:
 		if len(viper.GetString(FlagTaxesPaid)) == 0 {
 			return errors.New("Need --taxes flag")
 		}
@@ -322,9 +335,10 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) error {
 			viper.GetString(FlagTo),
 			depositInfo,
 			viper.GetString(FlagNotes),
-			amt,
 			accCur,
 			dueDate,
+			amt,
+			payable,
 			docBytes,
 			filename,
 			taxes,
@@ -346,8 +360,8 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 	}
 	receiver = args[0]
 
-	flagsIDs := viper.GetString(FlagIDs)
-	flagsDateRange := viper.GetString(FlagDateRange)
+	flagIDs := viper.GetString(FlagIDs)
+	flagDateRange := viper.GetString(FlagDateRange)
 
 	if len(flagIDs) > 0 && len(flagDateRange) > 0 {
 		return errors.New("Cannot use both the IDs flag and date-range flag")
@@ -360,37 +374,26 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 	var ids [][]byte
 	var startDate, endDate *time.Time = nil, nil
 	if len(flagDateRange) > 0 {
-		dates := strings.Split(flagDateRange)
-		parseDate := func(date string) (time.Time, error) {
-			if len(date) == 0 {
-				return nil, nil
-			} else {
-				return types.ParseDate(dates[0])
-			}
-		}
 		var err error
-		startDate, err = parseDate(dates[0])
-		if err != nil {
-			return err
-		}
-		endDate, err = parseDate(dates[1])
+		startDate, endDate, err = common.ParseDateRange(flagDateRange)
 		if err != nil {
 			return err
 		}
 	} else {
-		idsStr := strings.Split(len(flagIDs), ",")
-		for i, arg := range args {
-			if !isHex(arg) {
+		idsStr := strings.Split(flagIDs, ",")
+		for _, idHex := range idsStr {
+			if !isHex(idHex) {
 				return errBadHexID
 			}
-			id, err := hex.DecodeString(StripHex(arg))
+			id, err := hex.DecodeString(StripHex(idHex))
 			if err != nil {
 				return err
 			}
+			ids = append([][]byte{id}, ids...)
 		}
 	}
 
-	date, err := types.ParseDate(viper.GetString(FlagDate))
+	date, err := common.ParseDate(viper.GetString(FlagDate))
 	if err != nil {
 		return err
 	}
@@ -408,6 +411,6 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 		endDate,
 	)
 	//txBytes := closeInvoice.TxBytes()
-	txBytes := types.TxBytes(*payment, types.TBTxCloseInvoices)
+	txBytes := types.TxBytes(*payment, invoicer.TBTxPayment)
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }

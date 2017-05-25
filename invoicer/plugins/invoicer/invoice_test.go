@@ -1,59 +1,65 @@
 package invoicer
 
 import (
-	"io/ioutil"
-	"path"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tendermint/basecoin-examples/invoicer/common"
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 	wire "github.com/tendermint/go-wire"
 )
 
-func TestRunInvoice(t *testing.T) {
+func TestRunTxInvoice(t *testing.T) {
 	require := require.New(t)
 
-	amt, err := types.ParseAmtCurTime("100BTC", time.Now())
+	date := time.Date(2015, time.Month(12), 31, 0, 0, 0, 0, time.UTC)
+
+	accCur := "BTC" //accepted currency for payment
+	amt, err := types.ParseAmtCurTime("1000USD", date)
 	require.Nil(err)
 
-	var invoice types.Invoice
+	taxes, err := types.ParseAmtCurTime("10USD", date)
+	require.Nil(err)
 
-	invoice = types.NewContract(
+	//calculate payable amount based on invoiced and accepted cur
+	payable, err := common.ConvertAmtCurTime(accCur, amt)
+	require.Nil(err)
+
+	var invoices [2]types.Invoice
+
+	invoices[0] = types.NewContract(
 		nil,
 		"foo", //from
 		"bar", //to
 		"deposit info",
 		"notes",
+		accCur,
+		time.Now().Add(time.Hour*24*14),
 		amt,
-		"btc",
-		time.Now().Add(time.Hour*100),
+		payable,
 	).Wrap()
 
-	//txBytes := types.TxBytes(invoice, 0x01)
-	txBytes := types.TxBytes(invoice, 0x01)
-	//txBytes := wire.BinaryBytes(struct{ types.Invoice }{invoice})
+	invoices[1] = types.NewExpense(
+		nil,
+		"foo", //from
+		"bar", //to
+		"deposit info",
+		"notes: expense",
+		accCur,
+		time.Now().Add(time.Hour*24*14),
+		amt,
+		payable,
+		[]byte("docbytes"),
+		"dummy.txt",
+		taxes,
+	).Wrap()
 
-	var invoiceRead = new(types.Invoice)
-
-	//err = wire.ReadBinaryBytes(txBytes, invoiceRead)
-	err = wire.ReadBinaryBytes(txBytes[1:], invoiceRead)
-	require.Nil(err)
-	require.False(invoiceRead.Empty())
-	_, ok := invoiceRead.Unwrap().(*types.Contract)
-	require.True(ok)
-}
-
-func TestReadWrite(t *testing.T) {
-	require := require.New(t)
-
-	imgPath := "/home/riger/Desktop/test.png"
-	_, filename := path.Split(imgPath)
-	savePath := path.Join("/home/riger/Desktop/rec", filename)
-
-	docBytes, err := ioutil.ReadFile(imgPath)
-	require.Nil(err)
-
-	err = ioutil.WriteFile(savePath, docBytes, 0644)
-	require.Nil(err)
+	for _, invoice := range invoices {
+		txBytes := types.TxBytes(invoice, 0x01)
+		var invoiceRead = new(types.Invoice)
+		err = wire.ReadBinaryBytes(txBytes[1:], invoiceRead)
+		require.Nil(err)
+		require.False(invoiceRead.Empty())
+	}
 }

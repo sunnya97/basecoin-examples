@@ -48,16 +48,16 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	//Get all invoices, verify the ID
 	var invoices []*types.Invoice
 	for _, invoiceID := range payment.InvoiceIDs {
-		invoice, err := getInvoice(store, payment.ID)
+		invoice, err := getInvoice(store, invoiceID)
 		if err != nil {
 			return abciErrInvoiceMissing
 		}
-		invoices = append(invoice, invoices...)
-		if invoice.Receiver != payment.Receiver {
+		invoices = append([]*types.Invoice{&invoice}, invoices...)
+		if invoice.GetCtx().Receiver != payment.Receiver {
 			return abci.ErrInternalError.AppendLog(
 				fmt.Sprintf("Invoice ID %x has receiver %v but the payment is to receiver %v!",
-					invoice.ID,
-					invoice.Receiver,
+					invoice.GetID(),
+					invoice.GetCtx().Receiver,
 					payment.Receiver))
 		}
 	}
@@ -84,28 +84,20 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 
 	//calculate and write changes to the set of all invoices
 	bal := payment.PaymentCurTime
-	for i, invoiceID := range payment.InvoiceIDs {
-
-		//get the invoice
-		invoice, err := getInvoice(store, payment.ID)
-		if err != nil {
-			return abciErrInvoiceMissing
-		}
-
+	for _, invoice := range invoices {
 		//pay the funds to the invoice, reduce funds from bal
 		invoice.GetCtx().Pay(bal) //TODO write test case here!
-
 		store.Set(InvoiceKey(invoice.GetID()), wire.BinaryBytes(invoice))
 	}
 
 	//add the payment object to the store
 	store.Set(InvoiceKey(payment.ID), wire.BinaryBytes(payment))
-	payments, err := getListBytes(store, ListPaymentsKey())
+	payments, err := getListBytes(store, ListPaymentKey())
 	if err != nil {
 		return abciErrGetPayments
 	}
 	payments = append(payments, payment.ID)
-	store.Set(ListPaymentsKey(), wire.BinaryBytes(payments))
+	store.Set(ListPaymentKey(), wire.BinaryBytes(payments))
 
 	return abci.OK
 }

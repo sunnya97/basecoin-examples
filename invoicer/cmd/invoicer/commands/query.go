@@ -16,6 +16,7 @@ import (
 	bcmd "github.com/tendermint/basecoin/cmd/commands"
 	"github.com/tendermint/go-wire"
 
+	"github.com/tendermint/basecoin-examples/invoicer/common"
 	"github.com/tendermint/basecoin-examples/invoicer/plugins/invoicer"
 	"github.com/tendermint/basecoin-examples/invoicer/types"
 )
@@ -62,7 +63,7 @@ var (
 func init() {
 	//register flags
 	fsDownload := flag.NewFlagSet("", flag.ContinueOnError)
-	fs.String(FlagDownloadExp, "", "download expenses pdfs to the relative path specified")
+	fsDownload.String(FlagDownloadExp, "", "download expenses pdfs to the relative path specified")
 
 	fsMultiple := func(obj, searchModifiers string) *flag.FlagSet {
 		fs := flag.NewFlagSet("", flag.ContinueOnError)
@@ -78,7 +79,7 @@ func init() {
 
 	QueryInvoiceCmd.Flags().AddFlagSet(fsDownload)
 	QueryInvoicesCmd.Flags().AddFlagSet(fsDownload)
-	QueryInvoicesCmd.Flags().String(FlagSums, false, "Sum invoice values by sender") //TODO add functionality
+	QueryInvoicesCmd.Flags().Bool(FlagSum, false, "Sum invoice values by sender") //TODO add functionality
 	QueryInvoicesCmd.Flags().AddFlagSet(fsMultiple("invoices", "invoice,expense,paid,unpaid"))
 	QueryPaymentsCmd.Flags().AddFlagSet(fsMultiple("payments", "invoice,expense"))
 
@@ -132,7 +133,7 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	listInvoices, err := queryListBytes(tmAddr)
+	listInvoices, err := queryListBytes(tmAddr, invoicer.ListInvoiceKey())
 	if err != nil {
 		return err
 	}
@@ -166,23 +167,14 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	//get the date range to query
-	dates := strings.Split(flagDateRange)
+	flagDateRange := viper.GetString(FlagDateRange)
 	var startDate, endDate *time.Time = nil, nil
-	parseDate := func(date string) (time.Time, error) {
-		if len(date) == 0 {
-			return nil, nil
-		} else {
-			return types.ParseDate(dates[0])
+	if len(flagDateRange) > 0 {
+		var err error
+		startDate, endDate, err = common.ParseDateRange(flagDateRange)
+		if err != nil {
+			return err
 		}
-	}
-	var err error
-	startDate, err = parseDate(dates[0])
-	if err != nil {
-		return err
-	}
-	endDate, err = parseDate(dates[1])
-	if err != nil {
-		return err
 	}
 
 	//actually loop through the invoices and query out the valid ones
@@ -193,24 +185,12 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return errors.Errorf("Bad invoice in active invoice list %v", err)
 		}
-
-		contract, isContract := invoice.Unwrap().(*types.Contract)
-		expense, isExpense := invoice.Unwrap().(*types.Expense)
-
-		var ctx types.Context
-		var transactionID string
-		switch {
-		case isContract:
-			ctx = contract.Ctx
-			transactionID = contract.TransactionID
-		case isExpense:
-			ctx = expense.Ctx
-			transactionID = expense.TransactionID
-		}
+		ctx := invoice.GetCtx()
 
 		//skip record if out of the date range
-		d := invoice.GetCtx().Invoiced.CurTime.Date
-		if startDate < d || endDate > d {
+		d := ctx.Invoiced.CurTime.Date
+		if (startDate != nil && d.Before(*startDate)) ||
+			(endDate != nil && d.After(*endDate)) {
 			continue
 		}
 
@@ -233,10 +213,13 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		//check the type filter flags
+
+		expense, isExpense := invoice.Unwrap().(*types.Expense)
+		_, isContract := invoice.Unwrap().(*types.Contract)
 		if (contractFilt && !isContract) ||
 			(expenseFilt && !isExpense) ||
-			(paidFilt && !ctx.paid) ||
-			(unpaidFilt && ctx.paid) {
+			(paidFilt && !ctx.Open) ||
+			(unpaidFilt && ctx.Open) {
 
 			continue
 		}
@@ -244,7 +227,7 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		if isExpense {
 			err = downloadExp(expense)
 			if err != nil {
-				return errors.Errorf("problem writing reciept file %v", err)
+				return errors.Errorf("problem writing receipt file %v", err)
 			}
 		}
 
@@ -259,14 +242,21 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	//compute the sum if flag is set
-	if viper.GetString(FlagSums) {
-		var sum *AmtCurTime
+	if viper.GetBool(FlagSum) {
+		var sum *types.AmtCurTime
 		for _, invoice := range invoices {
-			sum = sum.Add(invoice.GetCtx().Unpaid())
+			unpaid, err := invoice.GetCtx().Unpaid()
+			if err != nil {
+				return err
+			}
+			sum, err = sum.Add(unpaid)
+			if err != nil {
+				return err
+			}
 		}
 		out := struct {
 			finalInvoice types.Invoice
-			sumDue       *AmtCurTime
+			sumDue       *types.AmtCurTime
 		}{
 			invoices[len(invoices)-1],
 			sum,
@@ -329,7 +319,7 @@ func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
 
-	listProfiles, err := queryListString(tmAddr)
+	listProfiles, err := queryListString(tmAddr, invoicer.ListProfileKey())
 	if err != nil {
 		return err
 	}
@@ -377,15 +367,15 @@ func queryPaymentsCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
 
-	listPayments, err := queryListBytes(tmAddr)
+	listPayments, err := queryListBytes(tmAddr, invoicer.ListPaymentKey())
 	if err != nil {
 		return err
 	}
 	switch viper.GetString("output") {
 	case "text":
-		fmt.Println(string(wire.JSONBytes(listProfiles))) //TODO Actually make text
+		fmt.Println(string(wire.JSONBytes(listPayments))) //TODO Actually make text
 	case "json":
-		fmt.Println(string(wire.JSONBytes(listProfiles)))
+		fmt.Println(string(wire.JSONBytes(listPayments)))
 	}
 	return nil
 }
@@ -395,7 +385,7 @@ func queryPaymentsCmd(cmd *cobra.Command, args []string) error {
 func queryProfile(tmAddr, name string) (profile types.Profile, err error) {
 
 	if len(name) == 0 {
-		return invoice, errors.New("invalid query id")
+		return profile, errors.New("invalid query id")
 	}
 	key := invoicer.ProfileKey(name)
 
@@ -425,7 +415,7 @@ func queryInvoice(tmAddr string, id []byte) (invoice types.Invoice, err error) {
 func queryPayment(tmAddr string, id []byte) (payment types.Payment, err error) {
 
 	if len(id) == 0 {
-		return invoice, errors.New("invalid query id")
+		return payment, errors.New("invalid query id")
 	}
 
 	key := invoicer.PaymentKey(id)
@@ -434,11 +424,10 @@ func queryPayment(tmAddr string, id []byte) (payment types.Payment, err error) {
 		return payment, err
 	}
 
-	return invoicer.GetInvoiceFromWire(res)
+	return invoicer.GetPaymentFromWire(res)
 }
 
-func queryListString(tmAddr string) (profile []string, err error) {
-	key := invoicer.ListProfileKey()
+func queryListString(tmAddr string, key []byte) (profile []string, err error) {
 	res, err := query(tmAddr, key)
 	if err != nil {
 		return profile, err
@@ -446,8 +435,7 @@ func queryListString(tmAddr string) (profile []string, err error) {
 	return invoicer.GetListStringFromWire(res)
 }
 
-func queryListBytes(tmAddr string) (invoice [][]byte, err error) {
-	key := invoicer.ListInvoiceKey()
+func queryListBytes(tmAddr string, key []byte) (invoice [][]byte, err error) {
 	res, err := query(tmAddr, key)
 	if err != nil {
 		return invoice, err

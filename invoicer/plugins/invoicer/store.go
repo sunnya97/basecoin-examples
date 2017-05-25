@@ -4,6 +4,22 @@ import (
 	btypes "github.com/tendermint/basecoin/types"
 	"github.com/tendermint/go-wire"
 	cmn "github.com/tendermint/tmlibs/common"
+
+	"github.com/tendermint/basecoin-examples/invoicer/types"
+)
+
+const (
+	TBTxProfileOpen = iota
+	TBTxProfileEdit
+	TBTxProfileDeactivate
+
+	TBTxContractOpen
+	TBTxContractEdit
+
+	TBTxExpenseOpen
+	TBTxExpenseEdit
+
+	TBTxPayment
 )
 
 func ProfileKey(name string) []byte {
@@ -22,11 +38,16 @@ func ListProfileKey() []byte {
 	return []byte(cmn.Fmt("%v,Profiles", Name))
 }
 
+//Both active and inactive profiles
+func ListProfileAllKey() []byte {
+	return []byte(cmn.Fmt("%v,ProfilesAll", Name))
+}
+
 func ListInvoiceKey() []byte {
 	return []byte(cmn.Fmt("%v,Invoices", Name))
 }
 
-func ListPaymentsKey() []byte {
+func ListPaymentKey() []byte {
 	return []byte(cmn.Fmt("%v,Payments", Name))
 }
 
@@ -93,7 +114,7 @@ func getInvoice(store btypes.KVStore, ID []byte) (types.Invoice, error) {
 
 func getPayment(store btypes.KVStore, ID []byte) (types.Payment, error) {
 	bytes := store.Get(InvoiceKey(ID))
-	return GetInvoiceFromWire(bytes)
+	return GetPaymentFromWire(bytes)
 }
 
 func getListString(store btypes.KVStore, key []byte) ([]string, error) {

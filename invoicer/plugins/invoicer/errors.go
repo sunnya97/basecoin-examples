@@ -20,6 +20,7 @@ var (
 	abciErrInvoiceMissing     = abci.ErrUnknownRequest.AppendLog("Error retrieving invoice to modify")
 	abciErrInvoiceClosed      = abci.ErrUnauthorized.AppendLog("Cannot edit closed invoice")
 	abciErrOverPayment        = abci.ErrUnauthorized.AppendLog("Error this is an overpayment")
+	abciErrProfileDeactive    = abci.ErrUnauthorized.AppendLog("Error this is an overpayment")
 )
 
 func wrapErrDecodingState(err error) error {

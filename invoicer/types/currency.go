@@ -1,10 +1,7 @@
 package types
 
 import (
-	"fmt"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -21,6 +18,20 @@ type AmtCurTime struct {
 	Amount  string //Decimal Number
 }
 
+func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
+
+	if len(amtCur) == 0 {
+		return nil, errors.New("not enought information to parse AmtCurTime")
+	}
+
+	var reAmt = regexp.MustCompile("([\\d\\.]+)")
+	var reCur = regexp.MustCompile("([^\\d\\W]+)")
+	amt := reAmt.FindString(amtCur)
+	cur := reCur.FindString(amtCur)
+
+	return &AmtCurTime{CurrencyTime{cur, date}, amt}, nil
+}
+
 func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
 	amt1, amt2, err := getDecimals(a, a2)
 	if err != nil {
@@ -35,6 +46,14 @@ func (a *AmtCurTime) Minus(a2 *AmtCurTime) (*AmtCurTime, error) {
 		return nil, err
 	}
 	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2).String()}, nil
+}
+
+func (a *AmtCurTime) EQ(a2 *AmtCurTime) (bool, error) {
+	amt1, amt2, err := getDecimals(a, a2)
+	if err != nil {
+		return false, err
+	}
+	return amt1.Equal(amt2), nil
 }
 
 func (a *AmtCurTime) GT(a2 *AmtCurTime) (bool, error) {
@@ -69,16 +88,6 @@ func (a *AmtCurTime) LTE(a2 *AmtCurTime) (bool, error) {
 	return amt1.LessThanOrEqual(amt2), nil
 }
 
-func (a *AmtCurTime) validateOperation(a2 *AmtCurTime) error {
-	switch {
-	case a.CurTime.Cur != a2.CurTime.Cur:
-		return errors.New("Can't operate on two different currencies")
-	case a.CurTime.Date != a2.CurTime.Date:
-		return errors.New("Can't operate on two different dates")
-	}
-	return nil
-}
-
 func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 decimal.Decimal, err error) {
 	amt1, err = decimal.NewFromString(a1.Amount)
 	if err != nil {
@@ -92,39 +101,12 @@ func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 dec
 	return
 }
 
-///////////////////////////////////////////////////////////////////////////
-
-func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
-
-	if len(amtCur) == 0 {
-		return nil, errors.New("not enought information to parse AmtCurTime")
+func (a *AmtCurTime) validateOperation(a2 *AmtCurTime) error {
+	switch {
+	case a.CurTime.Cur != a2.CurTime.Cur:
+		return errors.New("Can't operate on two different currencies")
+	case a.CurTime.Date != a2.CurTime.Date:
+		return errors.New("Can't operate on two different dates")
 	}
-
-	var reAmt = regexp.MustCompile("([\\d\\.]+)")
-	var reCur = regexp.MustCompile("([^\\d\\W]+)")
-	amt := reAmt.FindString(amtCur)
-	cur := reCur.FindString(amtCur)
-
-	return &AmtCurTime{CurrencyTime{cur, date}, amt}, nil
-}
-
-func ParseDate(date string) (t time.Time, err error) {
-
-	//get the time of invoice
-	str := strings.Split(date, "-")
-	var ymd = []int{}
-	for _, i := range str {
-		j, err := strconv.Atoi(i)
-		if err != nil {
-			return t, err
-		}
-		ymd = append(ymd, j)
-	}
-	if len(ymd) != 3 {
-		return t, fmt.Errorf("bad date parsing, not 3 segments") //never stack trace
-	}
-
-	t = time.Date(ymd[0], time.Month(ymd[1]), ymd[2], 0, 0, 0, 0, time.UTC)
-
-	return t, nil
+	return nil
 }

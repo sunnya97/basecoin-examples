@@ -17,37 +17,48 @@ func validateProfile(profile *types.Profile) abci.Result {
 		return abci.ErrInternalError.AppendLog("new profile must have an accepted currency")
 	case profile.DueDurationDays < 0:
 		return abci.ErrInternalError.AppendLog("new profile due duration must be non-negative")
+	case !profile.Active:
+		return abciErrProfileDeactive
 	default:
 		return abci.OK
 	}
 }
 
-func writeProfile(store btypes.KVStore, active []string, profile *types.Profile) {
+func writeProfile(store btypes.KVStore, active []string, profile *types.Profile) abci.Result {
+
+	//Validate Tx
+	res := validateProfile(profile)
+	if res.IsErr() {
+		return res
+	}
 
 	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(*profile))
 
-	//also add it to the list of open profiles
+	//Add it to the list of all profiles
 	active = append(active, profile.Name)
-	store.Set(ListProfileKey(), wire.BinaryBytes(active))
+	store.Set(ListProfileAllKey(), wire.BinaryBytes(active))
+
+	return abci.OK
 }
 
-func removeProfile(store btypes.KVStore, active []string, profile *types.Profile) {
+func deactivateProfile(store btypes.KVStore, active []string, profile *types.Profile) abci.Result {
+	profile.Active = false
+	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(*profile))
 
-	//TODO remove profile, can't delete store entry on current KVstore implementation
-	store.Set(ProfileKey(profile.Name), nil)
+	//remove profile from the list of active profiles
+	active = append(active, profile.Name)
+	store.Set(ListProfileAllKey(), wire.BinaryBytes(active))
 
-	//remove from the active profile list
-	for i, v := range active {
-		if v == profile.Name {
-			active = append(active[:i], active[i+1:]...)
-			break
-		}
-	}
-	store.Set(ListProfileKey(), wire.BinaryBytes(active))
+	return abci.OK
+}
+
+func removeFromStringArray(array []string, elem string) []string {
+
+	return array
 }
 
 //TODO remove this once replaced KVStore functionality
-func profileIsActive(active []string, name string) bool {
+func profileRegistered(active []string, name string) bool {
 	for _, p := range active {
 		if p == name {
 			return true
@@ -57,16 +68,17 @@ func profileIsActive(active []string, name string) bool {
 }
 
 func nameFromAddress(store btypes.KVStore, active []string, address bcmd.Address) string {
-	for i, name := range active {
+	for _, name := range active {
 		profile, _ := getProfile(store, name)
 		if profile.Address == address {
 			return profile.Name
 		}
 	}
+	return ""
 }
 
 func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, shouldExist bool,
-	action func(store btypes.KVStore, active []string, profile *types.Profile)) (res abci.Result) {
+	action func(store btypes.KVStore, active []string, profile *types.Profile) abci.Result) abci.Result {
 
 	// Decode tx
 	var profile = new(types.Profile)
@@ -76,7 +88,7 @@ func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 	}
 
 	//get the name from address, if not opening a new profile
-	active, err := getListString(store)
+	active, err := getListString(store, ListProfileKey())
 	if err != nil {
 		return abciErrGetProfiles
 	}
@@ -85,19 +97,12 @@ func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 	}
 
 	//Check existence
-	if shouldExist && !profileIsActive(active, profile.Name) {
+	if shouldExist && !profileRegistered(active, profile.Name) {
 		return abciErrProfileNonExistent
 	}
-	if !shouldExist && profileIsActive(active, profile.Name) {
+	if !shouldExist && profileRegistered(active, profile.Name) {
 		return abciErrProfileExists
 	}
 
-	//Validate Tx
-	res = validateProfile(profile)
-	if res.IsErr() {
-		return res
-	}
-
-	action(store, active, profile)
-	return abci.OK
+	return action(store, active, profile)
 }
