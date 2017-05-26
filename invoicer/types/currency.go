@@ -33,25 +33,39 @@ func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 }
 
 func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
-	if a2 == nil {
+	switch {
+	case a == nil && a2 != nil:
+		return a2, nil
+	case a != nil && a2 == nil:
 		return a, nil
+	case a != nil && a2 != nil:
+		amt1, amt2, err := getDecimals(a, a2)
+		if err != nil {
+			return nil, err
+		}
+		return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Add(amt2).String()}, nil
+	case a == nil && a2 == nil:
+		return nil, nil
 	}
-	amt1, amt2, err := getDecimals(a, a2)
-	if err != nil {
-		return nil, err
-	}
-	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Add(amt2).String()}, nil
+	return nil, nil //never called
 }
 
 func (a *AmtCurTime) Minus(a2 *AmtCurTime) (*AmtCurTime, error) {
-	if a2 == nil {
+	switch {
+	case a == nil && a2 != nil:
+		return nil, errors.New("a is nil")
+	case a != nil && a2 == nil:
 		return a, nil
+	case a != nil && a2 != nil:
+		amt1, amt2, err := getDecimals(a, a2)
+		if err != nil {
+			return nil, err
+		}
+		return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2).String()}, nil
+	case a == nil && a2 == nil:
+		return nil, errors.New("a is nil")
 	}
-	amt1, amt2, err := getDecimals(a, a2)
-	if err != nil {
-		return nil, err
-	}
-	return &AmtCurTime{CurrencyTime{a.CurTime.Cur, a.CurTime.Date}, amt1.Sub(amt2).String()}, nil
+	return nil, nil //never called
 }
 
 func (a *AmtCurTime) EQ(a2 *AmtCurTime) (bool, error) {

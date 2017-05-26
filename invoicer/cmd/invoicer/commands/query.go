@@ -101,6 +101,7 @@ func queryInvoiceCmd(cmd *cobra.Command, args []string) error {
 		return errBadHexID
 	}
 	id, err := hex.DecodeString(StripHex(args[0]))
+	//return errors.Errorf("%x\n%v\n", id, args[0])
 	if err != nil {
 		return err
 	}
@@ -198,7 +199,7 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 
 		invoice, err := queryInvoice(tmAddr, id)
 		if err != nil {
-			return errors.Errorf("Bad invoice in active invoice list %v", err)
+			return errors.Errorf("Bad invoice in active invoice list %x \n%v \n%v", id, listInvoices, err)
 		}
 		ctx := invoice.GetCtx()
 

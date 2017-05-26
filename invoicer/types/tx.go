@@ -80,7 +80,11 @@ func (c *Context) Unpaid() (*AmtCurTime, error) {
 //This function will make the maximum payment to the invoice from the fund
 //funds should be reduced from the the fund and returned throught the pointer
 func (c *Context) Pay(fund *AmtCurTime) error {
-	gte, err := fund.GTE(c.Payable)
+	unpaid, err := c.Unpaid()
+	if err != nil {
+		return err
+	}
+	gte, err := fund.GTE(unpaid)
 	if err != nil {
 		return err
 	}
@@ -92,7 +96,8 @@ func (c *Context) Pay(fund *AmtCurTime) error {
 			return err
 		}
 	} else {
-		c.Paid = fund
+		//TODO better way of duplicating value of fund here
+		c.Paid = &AmtCurTime{CurrencyTime{fund.CurTime.Cur, fund.CurTime.Date}, fund.Amount}
 		fund.Amount = "0" //empty the fund
 	}
 	return nil

@@ -109,8 +109,10 @@ echo "query all invoices"
 invoicer query invoices | jq
 
 echo "pay the opened invoice with some cash!"
-invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.5BTC --date 2017-01-01 --tx-id "FOOBTC-TX-01" --from ${TESTKEY[0]} --amount 1mycoin --debug
-invoicer query invoice 0x$ID
+invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.5BTC --date 2017-01-01 --tx-id "FOOBTC-TX-01" --from ${TESTKEY[0]} --amount 1mycoin 
+invoicer query invoice 0x$ID | jq
+invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.2454003323983133BTC --date 2017-01-01 --tx-id "FOOBTC-TX-01" --from ${TESTKEY[0]} --amount 1mycoin 
+invoicer query invoice 0x$ID | jq #TODO test if open or not right here
 
 echo "cool"
 exit 1

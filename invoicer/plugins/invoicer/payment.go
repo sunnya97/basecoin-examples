@@ -67,13 +67,11 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	for _, invoice := range invoices {
 		unpaid, err := invoice.GetCtx().Unpaid()
 		if err != nil {
-			//return abciErrDecimal(err)
-			return abci.ErrBaseEncodingError.AppendLog(fmt.Sprintf("1) Error in decimal calculation for invoice %v:\n %v", *invoice, err))
+			return abciErrDecimal(err)
 		}
 		totalCost, err = totalCost.Add(unpaid)
 		if err != nil {
-			//return abciErrDecimal(err)
-			return abci.ErrBaseEncodingError.AppendLog(fmt.Sprintf("2) Error in decimal calculation for invoice %v:\n %v", *invoice, err))
+			return abciErrDecimal(err)
 		}
 	}
 	gt, err := payment.PaymentCurTime.GT(totalCost)
@@ -88,12 +86,15 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	bal := payment.PaymentCurTime
 	for _, invoice := range invoices {
 		//pay the funds to the invoice, reduce funds from bal
-		invoice.GetCtx().Pay(bal) //TODO write test case here!
-		store.Set(InvoiceKey(invoice.GetID()), wire.BinaryBytes(invoice))
+		err = invoice.GetCtx().Pay(bal) //TODO write test case here!
+		if err != nil {
+			return abci.ErrUnauthorized.AppendLog("Error paying invoice: " + err.Error())
+		}
+		store.Set(InvoiceKey(invoice.GetID()), wire.BinaryBytes(*invoice))
 	}
 
 	//add the payment object to the store
-	store.Set(InvoiceKey(payment.ID), wire.BinaryBytes(payment))
+	store.Set(PaymentKey(payment.ID), wire.BinaryBytes(payment))
 	payments, err := getListBytes(store, ListPaymentKey())
 	if err != nil {
 		return abciErrGetPayments
