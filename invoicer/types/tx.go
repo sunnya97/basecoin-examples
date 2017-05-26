@@ -186,33 +186,22 @@ func (e *Expense) GetCtx() *Context {
 /////////////////////////////////////////////////////////////////////////
 
 type Payment struct {
-	ID             []byte      //ID of this payment
-	InvoiceIDs     [][]byte    //list of ID's to close with transaction
-	Receiver       string      //intended receiver ID of the payment
-	TransactionID  string      //empty when unpaid
-	PaymentCurTime *AmtCurTime //currency used to pay invoice, empty when unpaid
-	StartDate      *time.Time  //optional start date of payments to query for
-	EndDate        *time.Time  //optional end date of payments to query
+	TransactionID  string
+	InvoiceIDs     [][]byte //List of ID's to close with transaction
+	Sender         string   //Intended sender profile name of the payment
+	Receiver       string   //Intended receiver profile name of the payment
+	PaymentCurTime *AmtCurTime
+	StartDate      *time.Time //Optional start date of payments to query for
+	EndDate        *time.Time //Optional end date of payments to query
 }
 
-func NewPayment(InvoiceIDs [][]byte, Receiver, TransactionID string, PaymentCurTime *AmtCurTime, StartDate, EndDate *time.Time) *Payment {
-	Ctx := struct {
-		Receiver       string
-		TransactionID  string
-		PaymentCurTime *AmtCurTime
-	}{
-		Receiver,
-		TransactionID,
-		PaymentCurTime,
-	}
-	hashBytes := merkle.SimpleHashFromBinary(Ctx)
-	ID := append([]byte{TBIDPayment}, hashBytes...)
+func NewPayment(InvoiceIDs [][]byte, TransactionID, Sender, Receiver string,
+	PaymentCurTime *AmtCurTime, StartDate, EndDate *time.Time) *Payment {
 
 	return &Payment{
-		ID:             ID,
+		TransactionID:  TransactionID,
 		InvoiceIDs:     InvoiceIDs,
 		Receiver:       Receiver,
-		TransactionID:  TransactionID,
 		PaymentCurTime: PaymentCurTime,
 		StartDate:      StartDate,
 		EndDate:        EndDate,

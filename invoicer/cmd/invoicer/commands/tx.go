@@ -185,6 +185,38 @@ func getAddress() (addr bcmd.Address, err error) {
 	return key.Address, err
 }
 
+//TODO optimize, move to the ABCI app
+func getProfile(cmd *cobra.Command) (profile *types.Profile, err error) {
+
+	//get the sender's address
+	address, err := getAddress()
+	if err != nil {
+		return profile, errors.Wrap(err, "Error loading address")
+	}
+
+	tmAddr := cmd.Parent().Flag("node").Value.String()
+	profiles, err := queryListString(tmAddr, invoicer.ListProfileActiveKey())
+	if err != nil {
+		return profile, err
+	}
+	found := false
+	for _, name := range profiles {
+		p, err := queryProfile(tmAddr, name)
+		if err != nil {
+			return profile, err
+		}
+		if bytes.Compare(p.Address[:], address[:]) == 0 {
+			profile = &p
+			found = true
+			break
+		}
+	}
+	if !found {
+		return profile, errors.New("Could not retreive profile from address")
+	}
+	return profile, nil
+}
+
 func contractOpenCmd(cmd *cobra.Command, args []string) error {
 	return invoiceCmd(cmd, args, invoicer.TBTxContractOpen)
 }
@@ -228,32 +260,9 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 	}
 
 	//get the sender's address
-	address, err := getAddress()
-	if err != nil {
-		return errors.Wrap(err, "Error loading address")
-	}
-
-	//determine the senders profile TODO optimize, move to the ABCI app
-	tmAddr := cmd.Parent().Flag("node").Value.String()
-	profiles, err := queryListString(tmAddr, invoicer.ListProfileActiveKey())
+	profile, err := getProfile(cmd)
 	if err != nil {
 		return err
-	}
-	var profile *types.Profile
-	found := false
-	for _, name := range profiles {
-		p, err := queryProfile(tmAddr, name)
-		if err != nil {
-			return err
-		}
-		if bytes.Compare(p.Address[:], address[:]) == 0 {
-			profile = &p
-			found = true
-			break
-		}
-	}
-	if !found {
-		return errors.New("Could not retreive profile from address")
 	}
 	sender := profile.Name
 
@@ -364,6 +373,13 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 	}
 	receiver = args[0]
 
+	//get the sender's address
+	profile, err := getProfile(cmd)
+	if err != nil {
+		return err
+	}
+	sender := profile.Name
+
 	flagIDs := viper.GetString(FlagIDs)
 	flagDateRange := viper.GetString(FlagDateRange)
 
@@ -408,6 +424,7 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 
 	payment := types.NewPayment(
 		ids,
+		sender,
 		receiver,
 		viper.GetString(FlagTransactionID),
 		amt,

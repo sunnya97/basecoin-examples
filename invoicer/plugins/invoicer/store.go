@@ -30,8 +30,8 @@ func InvoiceKey(ID []byte) []byte {
 	return []byte(cmn.Fmt("%v,ID=%x", Name, ID))
 }
 
-func PaymentKey(ID []byte) []byte {
-	return []byte(cmn.Fmt("%v,Payment=%x", Name, ID))
+func PaymentKey(transactionID string) []byte {
+	return []byte(cmn.Fmt("%v,Payment=%v", Name, transactionID))
 }
 
 func ListProfileActiveKey() []byte {
@@ -112,8 +112,8 @@ func getInvoice(store btypes.KVStore, ID []byte) (types.Invoice, error) {
 	return GetInvoiceFromWire(bytes)
 }
 
-func getPayment(store btypes.KVStore, ID []byte) (types.Payment, error) {
-	bytes := store.Get(InvoiceKey(ID))
+func getPayment(store btypes.KVStore, transactionID []byte) (types.Payment, error) {
+	bytes := store.Get(InvoiceKey(transactionID))
 	return GetPaymentFromWire(bytes)
 }
 

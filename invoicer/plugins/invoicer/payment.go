@@ -94,12 +94,12 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	}
 
 	//add the payment object to the store
-	store.Set(PaymentKey(payment.ID), wire.BinaryBytes(payment))
-	payments, err := getListBytes(store, ListPaymentKey())
+	store.Set(PaymentKey(payment.TransactionID), wire.BinaryBytes(payment))
+	payments, err := getListString(store, ListPaymentKey())
 	if err != nil {
 		return abciErrGetPayments
 	}
-	payments = append(payments, payment.ID)
+	payments = append(payments, payment.TransactionID)
 	store.Set(ListPaymentKey(), wire.BinaryBytes(payments))
 
 	return abci.OK
