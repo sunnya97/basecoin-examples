@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sethgrid/pester"
 	"github.com/shopspring/decimal"
 
@@ -39,24 +40,27 @@ func convert(denomIn, denomOut string, amt decimal.Decimal, date time.Time) (out
 	urlUSD2BTC := fmt.Sprintf("http://api.coindesk.com/v1/bpi/historical/close.json?start=%v&end=%v", dateStr, dateStr)
 
 	//calculate the conversion factor
-	conv := decimal.New(1, 1)
+	conv := decimal.New(1, 0)
 	if denomIn != "USD" {
 		multiplier, err := getRate(urlFiat2USD, "rates", denomIn)
 		if err != nil {
-			return out, err
+			return out, errors.WithMessage(err,
+				fmt.Sprintf("denomIn %v, denomOut %v", denomIn, denomOut))
 		}
 		conv = conv.Mul(multiplier)
 	}
 	if denomOut == "BTC" {
 		multiplier, err := getRate(urlUSD2BTC, "bpi", dateStr)
 		if err != nil {
-			return out, err
+			return out, errors.WithMessage(err,
+				fmt.Sprintf("denomIn %v, denomOut %v", denomIn, denomOut))
 		}
 		conv = conv.Mul(multiplier)
 	} else if denomOut != "USD" {
 		divisor, err := getRate(urlFiat2USD, "rates", denomOut)
 		if err != nil {
-			return out, err
+			return out, errors.WithMessage(err,
+				fmt.Sprintf("denomIn %v, denomOut %v", denomIn, denomOut))
 		}
 		conv = conv.Div(divisor)
 	}
@@ -76,8 +80,14 @@ func getRate(url, index1, index2 string) (out decimal.Decimal, err error) {
 	err = json.NewDecoder(resp.Body).Decode(&temp)
 	resp.Body.Close()
 	if err != nil {
-		return out, err
+		return out, errors.WithMessage(err,
+			fmt.Sprintf("Bad json decode for url %v, index1 %v, index2 %v", url, index1, index2))
 	}
 	temp2 := temp[index1].(map[string]interface{})
+
+	if temp2[index2] == nil {
+		return out, errors.Errorf("Rate is nil using: url %v, index1 %v, index2 %v", url, index1, index2)
+	}
+
 	return decimal.NewFromFloat(temp2[index2].(float64)), nil
 }

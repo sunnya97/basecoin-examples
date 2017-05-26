@@ -71,7 +71,6 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 				break
 			}
 		}
-
 		if !found {
 			return abciErrInvoiceMissing
 		}
@@ -79,8 +78,10 @@ func runTxInvoice(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 		store.Set(ListInvoiceKey(), wire.BinaryBytes(invoices))
 	}
 
-	//Set the id, then validate a bit more
-	invoice.SetID()
+	//Set the id if it doesn't yet exist
+	if len(invoice.GetID()) == 0 {
+		invoice.SetID()
+	}
 
 	if _, err := getProfile(store, invoice.GetCtx().Sender); err != nil {
 		return abciErrNoSender

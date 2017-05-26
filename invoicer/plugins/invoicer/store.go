@@ -34,12 +34,12 @@ func PaymentKey(ID []byte) []byte {
 	return []byte(cmn.Fmt("%v,Payment=%x", Name, ID))
 }
 
-func ListProfileKey() []byte {
+func ListProfileActiveKey() []byte {
 	return []byte(cmn.Fmt("%v,Profiles", Name))
 }
 
 //Both active and inactive profiles
-func ListProfileAllKey() []byte {
+func ListProfileInactiveKey() []byte {
 	return []byte(cmn.Fmt("%v,ProfilesAll", Name))
 }
 

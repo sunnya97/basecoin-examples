@@ -18,7 +18,7 @@ func validateProfile(profile *types.Profile) abci.Result {
 	case profile.DueDurationDays < 0:
 		return abci.ErrInternalError.AppendLog("new profile due duration must be non-negative")
 	case !profile.Active:
-		return abciErrProfileDeactive
+		return abciErrProfileInactive
 	default:
 		return abci.OK
 	}
@@ -32,29 +32,52 @@ func writeProfile(store btypes.KVStore, active []string, profile *types.Profile)
 		return res
 	}
 
+	//write the profile to the profile key
 	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(*profile))
 
-	//Add it to the list of all profiles
+	//add the profile name to the list of active profiles
 	active = append(active, profile.Name)
-	store.Set(ListProfileAllKey(), wire.BinaryBytes(active))
+	store.Set(ListProfileActiveKey(), wire.BinaryBytes(active))
 
 	return abci.OK
 }
 
 func deactivateProfile(store btypes.KVStore, active []string, profile *types.Profile) abci.Result {
-	profile.Active = false
-	store.Set(ProfileKey(profile.Name), wire.BinaryBytes(*profile))
+
+	name := profile.Name
+
+	//get the original profile that's saved from the store, set that one to inactive
+	storeProfile, err := getProfile(store, name)
+	if err != nil {
+		return abciErrNoProfile
+	}
+
+	storeProfile.Active = false
+	store.Set(ProfileKey(name), wire.BinaryBytes(storeProfile))
 
 	//remove profile from the list of active profiles
-	active = append(active, profile.Name)
-	store.Set(ListProfileAllKey(), wire.BinaryBytes(active))
+	active = removeElemStringArray(active, name)
+	store.Set(ListProfileActiveKey(), wire.BinaryBytes(active))
+
+	//Add the profile name to the list of inactive profiles
+	all, err := getListString(store, ListProfileActiveKey())
+	if err != nil {
+		return abciErrGetAllProfiles
+	}
+	all = append(all, name)
+	store.Set(ListProfileInactiveKey(), wire.BinaryBytes(all))
 
 	return abci.OK
 }
 
-func removeFromStringArray(array []string, elem string) []string {
-
-	return array
+//TODO move to tmlibs/common
+func removeElemStringArray(a []string, remove string) []string {
+	for i, el := range a {
+		if el == remove {
+			a = append(a[:i], a[i+1:]...)
+		}
+	}
+	return a
 }
 
 //TODO remove this once replaced KVStore functionality
@@ -88,7 +111,7 @@ func runTxProfile(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte, 
 	}
 
 	//get the name from address, if not opening a new profile
-	active, err := getListString(store, ListProfileKey())
+	active, err := getListString(store, ListProfileActiveKey())
 	if err != nil {
 		return abciErrGetProfiles
 	}

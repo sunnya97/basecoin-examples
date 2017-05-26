@@ -33,6 +33,9 @@ func ParseAmtCurTime(amtCur string, date time.Time) (*AmtCurTime, error) {
 }
 
 func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
+	if a2 == nil {
+		return a, nil
+	}
 	amt1, amt2, err := getDecimals(a, a2)
 	if err != nil {
 		return nil, err
@@ -41,6 +44,9 @@ func (a *AmtCurTime) Add(a2 *AmtCurTime) (*AmtCurTime, error) {
 }
 
 func (a *AmtCurTime) Minus(a2 *AmtCurTime) (*AmtCurTime, error) {
+	if a2 == nil {
+		return a, nil
+	}
 	amt1, amt2, err := getDecimals(a, a2)
 	if err != nil {
 		return nil, err
@@ -89,6 +95,14 @@ func (a *AmtCurTime) LTE(a2 *AmtCurTime) (bool, error) {
 }
 
 func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 decimal.Decimal, err error) {
+
+	if a1 == nil {
+		return amt1, amt2, errors.New("input a1 is nil")
+	}
+	if a2 == nil {
+		return amt1, amt2, errors.New("input a2 is nil")
+	}
+
 	amt1, err = decimal.NewFromString(a1.Amount)
 	if err != nil {
 		return

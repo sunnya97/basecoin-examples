@@ -53,7 +53,7 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 			return abciErrInvoiceMissing
 		}
 		invoices = append([]*types.Invoice{&invoice}, invoices...)
-		if invoice.GetCtx().Receiver != payment.Receiver {
+		if invoice.GetCtx().Sender != payment.Receiver {
 			return abci.ErrInternalError.AppendLog(
 				fmt.Sprintf("Invoice ID %x has receiver %v but the payment is to receiver %v!",
 					invoice.GetID(),
@@ -67,11 +67,13 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	for _, invoice := range invoices {
 		unpaid, err := invoice.GetCtx().Unpaid()
 		if err != nil {
-			return abciErrDecimal(err)
+			//return abciErrDecimal(err)
+			return abci.ErrBaseEncodingError.AppendLog(fmt.Sprintf("1) Error in decimal calculation for invoice %v:\n %v", *invoice, err))
 		}
 		totalCost, err = totalCost.Add(unpaid)
 		if err != nil {
-			return abciErrDecimal(err)
+			//return abciErrDecimal(err)
+			return abci.ErrBaseEncodingError.AppendLog(fmt.Sprintf("2) Error in decimal calculation for invoice %v:\n %v", *invoice, err))
 		}
 	}
 	gt, err := payment.PaymentCurTime.GT(totalCost)

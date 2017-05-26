@@ -89,7 +89,7 @@ func init() {
 	fsInvoice.String(FlagTo, "allinbits", "Name of the invoice receiver")
 	fsInvoice.String(FlagDepositInfo, "", "Deposit information for invoice payment (default: profile)")
 	fsInvoice.String(FlagNotes, "", "Notes regarding the expense")
-	fsInvoice.String(FlagCur, "btc", "Currency which invoice should be paid in")
+	fsInvoice.String(FlagCur, "", "Currency which invoice should be paid in")
 	fsInvoice.String(FlagDate, "", "Invoice demon date in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 	fsInvoice.String(FlagDueDate, "", "Invoice due date in the format YYYY-MM-DD eg. 2016-12-31 (default: profile)")
 
@@ -100,7 +100,7 @@ func init() {
 	fsPayment := flag.NewFlagSet("", flag.ContinueOnError)
 	fsPayment.String(FlagIDs, "", "IDs to close during this transaction <id1>,<id2>,<id3>... ")
 	fsPayment.String(FlagTransactionID, "", "Completed transaction ID")
-	fsPayment.String(FlagAmount, "", "Payment amount in the format <decimal><currency> eg. 10.23usd")
+	fsPayment.String(FlagPaid, "", "Payment amount in the format <decimal><currency> eg. 10.23usd")
 	fsPayment.String(FlagDate, "", "Date payment in the format YYYY-MM-DD eg. 2016-12-31 (default: today)")
 	fsPayment.String(FlagDateRange, "",
 		"Autoselect IDs within the date range start:end, where start/end are in the format YYYY-MM-DD, or empty. ex. --date 1991-10-21:")
@@ -205,8 +205,7 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 	if len(args) != 1 {
 		return errCmdReqArg("amount<amt><cur>")
 	}
-	sender := args[0]
-	amountStr := args[1]
+	amountStr := args[0]
 
 	var id []byte = nil
 
@@ -215,9 +214,9 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 		txTB == invoicer.TBTxExpenseEdit { //require this flag if
 
 		//get the old id to remove if editing
-		idRaw := viper.GetString(FlagTransactionID)
+		idRaw := viper.GetString(FlagID)
 		if len(idRaw) == 0 {
-			errors.New("Need the id to edit, please specify through the flag --id")
+			return errors.New("Need the id to edit, please specify through the flag --id")
 		}
 		if !isHex(idRaw) {
 			return errBadHexID
@@ -236,11 +235,12 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 
 	//determine the senders profile TODO optimize, move to the ABCI app
 	tmAddr := cmd.Parent().Flag("node").Value.String()
-	profiles, err := queryListString(tmAddr, invoicer.ListProfileKey())
+	profiles, err := queryListString(tmAddr, invoicer.ListProfileActiveKey())
 	if err != nil {
 		return err
 	}
 	var profile *types.Profile
+	found := false
 	for _, name := range profiles {
 		p, err := queryProfile(tmAddr, name)
 		if err != nil {
@@ -248,10 +248,14 @@ func invoiceCmd(cmd *cobra.Command, args []string, txTB byte) (err error) {
 		}
 		if bytes.Compare(p.Address[:], address[:]) == 0 {
 			profile = &p
+			found = true
 			break
 		}
-
 	}
+	if !found {
+		return errors.New("Could not retreive profile from address")
+	}
+	sender := profile.Name
 
 	var accCur string
 	if len(viper.GetString(FlagCur)) > 0 {
@@ -397,7 +401,7 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	amt, err := types.ParseAmtCurTime(viper.GetString(FlagAmount), date)
+	amt, err := types.ParseAmtCurTime(viper.GetString(FlagPaid), date)
 	if err != nil {
 		return err
 	}

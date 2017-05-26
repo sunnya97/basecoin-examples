@@ -79,8 +79,9 @@ func init() {
 
 	QueryInvoiceCmd.Flags().AddFlagSet(fsDownload)
 	QueryInvoicesCmd.Flags().AddFlagSet(fsDownload)
-	QueryInvoicesCmd.Flags().Bool(FlagSum, false, "Sum invoice values by sender") //TODO add functionality
+	QueryInvoicesCmd.Flags().Bool(FlagSum, false, "Sum invoice values by sender")
 	QueryInvoicesCmd.Flags().AddFlagSet(fsMultiple("invoices", "invoice,expense,paid,unpaid"))
+	QueryProfilesCmd.Flags().Bool(FlagInactive, false, "list inactive profiles")
 	QueryPaymentsCmd.Flags().AddFlagSet(fsMultiple("payments", "invoice,expense"))
 
 	//register commands
@@ -138,15 +139,21 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	//return fmt.Errorf("invoicexz %x\n", listInvoices)
 	if len(listInvoices) == 0 {
 		return fmt.Errorf("No save invoices to return") //never stack trace
 	}
 
 	//init flag variables
 	from := viper.GetString(FlagFrom)
-	froms := strings.Split(from, ",")
 	to := viper.GetString(FlagTo)
-	toes := strings.Split(to, ",")
+	var froms, toes []string
+	if len(froms) > 0 {
+		froms = strings.Split(from, ",")
+	}
+	if len(toes) > 0 {
+		toes = strings.Split(to, ",")
+	}
 
 	ty := viper.GetString(FlagType)
 	contractFilt, expenseFilt, paidFilt, unpaidFilt := true, true, true, true
@@ -163,6 +170,14 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 		if strings.Contains(ty, "unpaid") {
 			unpaidFilt = true
+		}
+
+		//if a whole catagory is missing, turn it on
+		if !contractFilt && !expenseFilt {
+			contractFilt, expenseFilt = true, true
+		}
+		if !paidFilt && !unpaidFilt {
+			paidFilt, unpaidFilt = true, true
 		}
 	}
 
@@ -213,13 +228,12 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		//check the type filter flags
-
 		expense, isExpense := invoice.Unwrap().(*types.Expense)
 		_, isContract := invoice.Unwrap().(*types.Contract)
-		if (contractFilt && !isContract) ||
-			(expenseFilt && !isExpense) ||
-			(paidFilt && !ctx.Open) ||
-			(unpaidFilt && ctx.Open) {
+		if !((contractFilt && isContract) ||
+			(expenseFilt && isExpense)) ||
+			!((paidFilt && ctx.Open) ||
+				(unpaidFilt && !ctx.Open)) {
 
 			continue
 		}
@@ -319,7 +333,14 @@ func queryProfilesCmd(cmd *cobra.Command, args []string) error {
 	//TODO Upgrade to viper once basecoin viper upgrade complete
 	tmAddr := cmd.Parent().Flag("node").Value.String()
 
-	listProfiles, err := queryListString(tmAddr, invoicer.ListProfileKey())
+	var key []byte
+	if viper.GetBool(FlagInactive) {
+		key = invoicer.ListProfileInactiveKey()
+	} else {
+		key = invoicer.ListProfileActiveKey()
+	}
+
+	listProfiles, err := queryListString(tmAddr, key)
 	if err != nil {
 		return err
 	}
@@ -385,7 +406,7 @@ func queryPaymentsCmd(cmd *cobra.Command, args []string) error {
 func queryProfile(tmAddr, name string) (profile types.Profile, err error) {
 
 	if len(name) == 0 {
-		return profile, errors.New("invalid query id")
+		return profile, errBadQuery("name")
 	}
 	key := invoicer.ProfileKey(name)
 
@@ -400,7 +421,7 @@ func queryProfile(tmAddr, name string) (profile types.Profile, err error) {
 func queryInvoice(tmAddr string, id []byte) (invoice types.Invoice, err error) {
 
 	if len(id) == 0 {
-		return invoice, errors.New("invalid query id")
+		return invoice, errBadQuery("id")
 	}
 
 	key := invoicer.InvoiceKey(id)
@@ -415,7 +436,7 @@ func queryInvoice(tmAddr string, id []byte) (invoice types.Invoice, err error) {
 func queryPayment(tmAddr string, id []byte) (payment types.Payment, err error) {
 
 	if len(id) == 0 {
-		return payment, errors.New("invalid query id")
+		return payment, errBadQuery("id")
 	}
 
 	key := invoicer.PaymentKey(id)

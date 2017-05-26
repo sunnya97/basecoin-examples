@@ -17,6 +17,7 @@ var (
 	FlagType        string = "type"
 	FlagFrom        string = "from"
 	FlagDownloadExp string = "download-expense"
+	FlagInactive    string = "inactive"
 
 	//transaction
 	//profile flags
@@ -31,5 +32,5 @@ var (
 
 	//payment flags
 	FlagTransactionID string = "tx-id"
-	FlagAmount        string = "amount"
+	FlagPaid          string = "paid"
 )

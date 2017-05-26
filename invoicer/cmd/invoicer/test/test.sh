@@ -49,9 +49,7 @@ done
 
 echo "deleting a profile"
 echo "invoicer tx invoicer profile-deactivate --from ${TESTKEY[3]} --amount 1mycoin"
-invoicer query profile ${NAMES[3]}
-invoicer tx invoicer profile-deactivate --from ${TESTKEY[3]} --amount 1mycoin
-invoicer query profile ${NAMES[3]}
+invoicer tx invoicer profile-deactivate --from ${TESTKEY[3]} --amount 1mycoin > /dev/null
 
 #test if profile is active
 ACTIVE=$(invoicer query profile ${NAMES[3]} | jq .Active)
@@ -61,32 +59,61 @@ if [ "$ACTIVE" != "false" ]; then
     exit 1
 fi
 
-#verify it doesn't exist in the list
-PROFILES=$(invoicer query profiles --active)
+#verify it doesn't exist in the active list
+PROFILES=$(invoicer query profiles)
 if [[ "${PROFILES}" == *"${NAMES[3]}"* ]]; then
     echo "Error profile should be removed: ${NAMES[3]}"
     echo $PROFILES
     exit 1
 fi
 
-echo "cool"
-exit 1
+#verify it does exist in the inactive list
+PROFILES=$(invoicer query profiles --inactive)
+if [[ "${PROFILES}" != *"${NAMES[3]}"* ]]; then
+    echo "Error profile should be removed: ${NAMES[3]}"
+    echo $PROFILES
+    exit 1
+fi
 
-echo "sending a wage invoice"
-invoicer tx invoicer wage-open 99.99BTC --to AllInBits --notes thanks! --from $TESTKEY[1] --amount 1mycoin
+#make sure that we're prevented from editing an inactive profile
+invoicer tx invoicer profile-edit --from ${TESTKEY[3]} --cur USD --amount 1mycoin &> /dev/null
+CUR=$(invoicer query profile ${NAMES[3]} | jq .AcceptedCur | tr -d '"')
+if [ "$CUR" == "USD" ]; then 
+    echo "Error inactive profile should not be editable"
+    exit 1
+fi
 
-#ID=$(invoicer query invoices | jq .[0][1].ID | tr -d '"')
+echo "editing an existing active profile"
+invoicer tx invoicer profile-edit --from ${TESTKEY[0]} --cur USD --amount 1mycoin > /dev/null
+CUR=$(invoicer query profile ${NAMES[0]} | jq .AcceptedCur | tr -d '"')
+if [ "$CUR" != "USD" ]; then 
+    printf 'Error active profile should be editable: want USD, have %s\n' $CUR
+    exit 1
+fi
+
+
+echo "sending a contract invoice"
+invoicer tx invoicer contract-open 1000.99USD --date 2017-01-01 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin > /dev/null
+
+echo "Here is the open invoice:"
+ID=$(invoicer query invoices | jq .[0][1].ID | tr -d '"')
+invoicer query invoice 0x$ID
+
 echo "editing the already open invoice"
-invoicer tx invoicer wage-Edit Rige 10.001ETH --id 0x$ID--to AllInBits --notes wudduxxp --from key.json --amount 1mycoin
+invoicer tx invoicer contract-edit 1000.99CAD --id 0x$ID --date 2017-01-01 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin --debug
+echo "Here is the edited invoice:"
+invoicer query invoice 0x$ID
+
 
 echo "query all invoices"
 invoicer query invoices | jq
 
-ID2=$(invoicer query invoices | jq .[0][1].ID | tr -d '"')
+echo "pay the opened invoice with some cash!"
+invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.5BTC --date 2017-01-01 --tx-id "FOOBTC-TX-01" --from ${TESTKEY[0]} --amount 1mycoin --debug
+invoicer query invoice 0x$ID
 
-echo "closing the opened invoice with some cash!"
-invoicer tx invoicer close-invoice 0x$ID2 --cur 10BTC --id "Tranzact10" --from key.json --amount 1mycoin
-
+echo "cool"
+exit 1
 
 echo "open a receipt"
 DIR1=$(/tmp/invoicer)
