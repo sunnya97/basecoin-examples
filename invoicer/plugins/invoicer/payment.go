@@ -37,12 +37,39 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 		return abciErrDecodingTX(err)
 	}
 
+	//If there are no IDs provided in payment tx
+	// then populate them based on date
+	if len(payment.InvoiceIDs) == 0 {
+		listInvoices, err := getListBytes(store, ListInvoiceKey())
+		if err != nil {
+			return abci.ErrInternalError.AppendLog(err.Error())
+		}
+		for _, id := range listInvoices {
+
+			invoice, err := getInvoice(store, id)
+			if err != nil {
+				return abci.ErrInternalError.AppendLog(
+					fmt.Sprintf("Bad invoice in active invoice list %x \n%x \n%v", id, listInvoices, err))
+			}
+			ctx := invoice.GetCtx()
+
+			//skip record if out of the date range
+			d := ctx.Invoiced.CurTime.Date
+			if (payment.StartDate != nil && d.Before(*payment.StartDate)) ||
+				(payment.EndDate != nil && d.After(*payment.EndDate)) {
+				continue
+			}
+
+			payment.InvoiceIDs = append(payment.InvoiceIDs, invoice.GetID())
+		}
+	}
+
 	//Validate Tx
 	switch {
 	case len(payment.InvoiceIDs) == 0:
-		return abci.ErrInternalError.AppendLog("Closer doesn't contain any IDs to close!")
+		return abci.ErrInternalError.AppendLog("Payment doesn't contain any IDs to close!")
 	case len(payment.TransactionID) == 0:
-		return abci.ErrInternalError.AppendLog("Closer must include a transaction ID")
+		return abci.ErrInternalError.AppendLog("Payment must include a transaction ID")
 	}
 
 	//Get all invoices, verify the ID
@@ -86,7 +113,7 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	bal := payment.PaymentCurTime
 	for _, invoice := range invoices {
 		//pay the funds to the invoice, reduce funds from bal
-		err = invoice.GetCtx().Pay(bal) //TODO write test case here!
+		err = invoice.GetCtx().Pay(bal)
 		if err != nil {
 			return abci.ErrUnauthorized.AppendLog("Error paying invoice: " + err.Error())
 		}
@@ -94,7 +121,7 @@ func runTxPayment(store btypes.KVStore, ctx btypes.CallContext, txBytes []byte) 
 	}
 
 	//add the payment object to the store
-	store.Set(PaymentKey(payment.TransactionID), wire.BinaryBytes(payment))
+	store.Set(PaymentKey(payment.TransactionID), wire.BinaryBytes(*payment))
 	payments, err := getListString(store, ListPaymentKey())
 	if err != nil {
 		return abciErrGetPayments

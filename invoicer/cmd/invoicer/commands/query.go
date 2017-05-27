@@ -285,8 +285,8 @@ func queryInvoicesCmd(cmd *cobra.Command, args []string) error {
 			}
 		}
 		out := struct {
-			finalInvoice types.Invoice
-			sumDue       *types.AmtCurTime
+			FinalInvoice types.Invoice
+			SumDue       *types.AmtCurTime
 		}{
 			invoices[len(invoices)-1],
 			sum,
@@ -423,7 +423,7 @@ func queryPaymentsCmd(cmd *cobra.Command, args []string) error {
 
 		payment, err := queryPayment(tmAddr, transactionID)
 		if err != nil {
-			return errors.Errorf("Bad invoice in active invoice list %x \n%v \n%v", transactionID, listPayments, err)
+			return errors.Errorf("Bad invoice in active invoice list %v \n%v \n%v", transactionID, listPayments, err)
 		}
 
 		//skip record if out of the date range

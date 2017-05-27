@@ -130,11 +130,8 @@ func getDecimals(a1 *AmtCurTime, a2 *AmtCurTime) (amt1 decimal.Decimal, amt2 dec
 }
 
 func (a *AmtCurTime) validateOperation(a2 *AmtCurTime) error {
-	switch {
-	case a.CurTime.Cur != a2.CurTime.Cur:
+	if a.CurTime.Cur != a2.CurTime.Cur {
 		return errors.New("Can't operate on two different currencies")
-	case a.CurTime.Date != a2.CurTime.Date:
-		return errors.New("Can't operate on two different dates")
 	}
 	return nil
 }

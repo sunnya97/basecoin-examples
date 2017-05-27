@@ -424,14 +424,13 @@ func paymentCmd(cmd *cobra.Command, args []string) error {
 
 	payment := types.NewPayment(
 		ids,
+		viper.GetString(FlagTransactionID),
 		sender,
 		receiver,
-		viper.GetString(FlagTransactionID),
 		amt,
 		startDate,
 		endDate,
 	)
-	//txBytes := closeInvoice.TxBytes()
 	txBytes := types.TxBytes(*payment, invoicer.TBTxPayment)
 	return bcmd.AppTx(invoicer.Name, txBytes)
 }

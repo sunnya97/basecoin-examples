@@ -111,25 +111,43 @@ invoicer query invoices | jq
 echo "pay the opened invoice with some cash!"
 invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.5BTC --date 2017-01-01 --tx-id "FOOBTC-TX-01" --from ${TESTKEY[0]} --amount 1mycoin 
 invoicer query invoice 0x$ID | jq
-invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.2454003323983133BTC --date 2017-01-01 --tx-id "FOOBTC-TX-02" --from ${TESTKEY[0]} --amount 1mycoin 
+invoicer tx invoicer payment Bucky --ids 0x$ID --paid 0.2454003323983133BTC --date 2017-01-01 --tx-id "FOOBTC-TX-02" --from ${TESTKEY[0]} --amount 1mycoin --debug 
 invoicer query invoice 0x$ID | jq #TODO test if open or not right here
-invoicer query payments | jq #TODO test if open or not right here
-
-echo "cool"
-exit 1
-
+invoicer query payments | jq
+ 
 echo "open a receipt"
-DIR1=$(/tmp/invoicer)
-DIR2=$($DIR1/retrieved)
+DIR1=(/tmp/invoicer)
+DIR2=($DIR1/retrieved)
 mkdir $DIR1 ; mkdir $DIR2
-wget $DIR1/invoicerDoc.png https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_120x44dp.png
-invoicer tx invoicer expense-open Rige 20.1BTC --receipt $DIR1/invoicerDoc.png --taxes 1btc --to Frey --notes wuddup --from key.json --amount 1mycoin
+wget -O $DIR1/invoicerDoc.png https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_120x44dp.png
+invoicer tx invoicer expense-open 99.99USD --date 2017-01-01 --receipt $DIR1/invoicerDoc.png --taxes 3.00USD --to AllInBits --notes transportation --from ${TESTKEY[1]} --amount 1mycoin --debug > /dev/null
 
 echo "Download the receipt"
-ID3=$(invoicer query invoices | jq .[1][1].ID | tr -d '"')
-invoicer query invoice 0x$ID3 --download-expense $DIR2
+ID2=$(invoicer query invoices | jq .[1][1].ID | tr -d '"')
+echo "invoicer query invoice 0x$ID2 --download-expense $DIR2"
+invoicer query invoice 0x$ID2 --download-expense $DIR2 > /dev/null
 
 if [ ! -f $DIR2/invoicerDoc.png ]; then
     echo "ERROR: receipt didn't download from query"
 fi
+
+echo "opening a bunch of invoices for various dates and attempting to get the sum of amount owing"
+invoicer tx invoicer contract-open 1000USD --date 2017-01-02 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin > /dev/null
+invoicer tx invoicer contract-open 1000USD --date 2017-01-15 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin > /dev/null
+invoicer tx invoicer contract-open 1000USD --date 2017-02-01 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin > /dev/null
+invoicer tx invoicer contract-open 1000USD --date 2017-03-15 --to AllInBits --notes thanks! --from ${TESTKEY[1]} --amount 1mycoin > /dev/null
+
+echo "invoice list"
+echo "invoicer query invoices | jq"
+invoicer query invoices | jq
+echo "invoicer query invoices --date-range 2017-01-02: | jq"
+invoicer query invoices --date-range 2017-01-02: | jq
+
+echo "sum of invoices due"
+invoicer query invoices --sum --date-range 2017-01-02: | jq
+
+echo "pay a bit of the invoices off"
+invoicer tx invoicer payment Bucky --date-range 2017-01-02: --paid 2BTC --date 2017-03-15 --tx-id "FOOBTC-TX-03" --from ${TESTKEY[0]} --amount 1mycoin --debug
+invoicer query invoices --date-range 2017-01-02: | jq
+invoicer query invoices --sum --date-range 2017-01-02: | jq
 

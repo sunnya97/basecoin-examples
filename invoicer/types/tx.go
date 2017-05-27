@@ -201,6 +201,7 @@ func NewPayment(InvoiceIDs [][]byte, TransactionID, Sender, Receiver string,
 	return &Payment{
 		TransactionID:  TransactionID,
 		InvoiceIDs:     InvoiceIDs,
+		Sender:         Sender,
 		Receiver:       Receiver,
 		PaymentCurTime: PaymentCurTime,
 		StartDate:      StartDate,
